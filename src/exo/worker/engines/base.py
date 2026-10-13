@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from collections.abc import Generator, Iterable
-from typing import BinaryIO
+from typing import TYPE_CHECKING, BinaryIO
 
 from exo.shared.types.chunks import Chunk
 from exo.shared.types.tasks import CANCEL_ALL_TASKS, GenerationTask, TaskId
@@ -11,6 +11,9 @@ from exo.shared.types.worker.runner_response import (
     ModelLoadingResponse,
 )
 from exo.worker.disaggregated.server import PrefillRequest
+
+if TYPE_CHECKING:
+    from exo.worker.runner.byte_exchange import RunnerByteExchange
 
 
 class Engine(ABC):
@@ -44,6 +47,9 @@ class Engine(ABC):
 
 
 class Builder(ABC):
+    # Generic runner-to-runner byte all-gather, set by the runner entrypoint when the Worker provides one.
+    byte_exchange: "RunnerByteExchange | None" = None
+
     @abstractmethod
     def connect(self, bound_instance: BoundInstance) -> None: ...
 

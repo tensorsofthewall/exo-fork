@@ -23,6 +23,7 @@ from exo.shared.types.events import (
     TaskAcknowledged,
     TaskStatusUpdated,
 )
+from exo.shared.types.runner_bytes import RunnerBytesMessage
 from exo.shared.types.tasks import (
     CANCEL_ALL_TASKS,
     ImageEdits,
@@ -54,6 +55,7 @@ from exo.worker.runner.diagnostics import (
     RunnerRingTransportError,
     RunnerUnknown,
 )
+from exo.worker.runner_bytes_hub import RunnerBytesHub
 
 PREFILL_TIMEOUT_SECONDS = 60
 DECODE_TIMEOUT_SECONDS = 5
@@ -195,6 +197,10 @@ class RunnerSupervisor:
     _task_sender: MpSender[Task]
     _event_sender: Sender[Event]
     _cancel_sender: MpSender[TaskId]
+    _bytes_out_recv: MpReceiver[RunnerBytesMessage] | None = None
+    _bytes_in_sender: MpSender[RunnerBytesMessage] | None = None
+    _bytes_hub: RunnerBytesHub | None = None
+    _bytes_publisher: Sender[RunnerBytesMessage] | None = None
     _tg: TaskGroup = field(default_factory=TaskGroup, init=False)
     status: RunnerStatus = field(default_factory=RunnerIdle, init=False)
     pending: dict[TaskId, anyio.Event] = field(default_factory=dict, init=False)
@@ -214,10 +220,14 @@ class RunnerSupervisor:
         bound_instance: BoundInstance,
         event_sender: Sender[Event],
         initialize_timeout: float = 400,
+        bytes_hub: RunnerBytesHub | None = None,
+        bytes_publisher: Sender[RunnerBytesMessage] | None = None,
     ) -> Self:
         ev_send, ev_recv = mp_channel[Event | RunnerTerminationError]()
         task_sender, task_recv = mp_channel[Task]()
         cancel_sender, cancel_recv = mp_channel[TaskId]()
+        bytes_out_send, bytes_out_recv = mp_channel[RunnerBytesMessage]()
+        bytes_in_send, bytes_in_recv = mp_channel[RunnerBytesMessage]()
 
         runner_process = AsyncProcess(
             target=entrypoint,
@@ -227,6 +237,8 @@ class RunnerSupervisor:
                 task_recv,
                 cancel_recv,
                 logger,
+                bytes_out_send,
+                bytes_in_recv,
             ),
             daemon=True,
         )
@@ -246,7 +258,13 @@ class RunnerSupervisor:
             _task_sender=task_sender,
             _cancel_sender=cancel_sender,
             _event_sender=event_sender,
+            _bytes_out_recv=bytes_out_recv,
+            _bytes_in_sender=bytes_in_send,
+            _bytes_hub=bytes_hub,
+            _bytes_publisher=bytes_publisher,
         )
+        if bytes_hub is not None:
+            bytes_hub.register(bound_instance.instance.instance_id, bytes_in_send)
 
         return self
 
@@ -259,8 +277,17 @@ class RunnerSupervisor:
 
                 tg.start_soon(self._watch_runner)
                 tg.start_soon(self._forward_events)
+                tg.start_soon(self._forward_runner_bytes)
         finally:
             logger.info("Runner supervisor shutting down")
+            if self._bytes_hub is not None:
+                self._bytes_hub.unregister(self.bound_instance.instance.instance_id)
+            if self._bytes_in_sender is not None:
+                with contextlib.suppress(ClosedResourceError):
+                    self._bytes_in_sender.close()
+            if self._bytes_out_recv is not None:
+                with contextlib.suppress(ClosedResourceError):
+                    self._bytes_out_recv.close()
             if not self._cancel_watch_runner.cancel_called:
                 self._cancel_watch_runner.cancel()
             with contextlib.suppress(ClosedResourceError):
@@ -387,6 +414,18 @@ class RunnerSupervisor:
         finally:
             for tid in self.pending:
                 self.pending[tid].set()
+
+    async def _forward_runner_bytes(self):
+        # Generic runner byte exchange: publish what the runner hands us to the instance's other workers.
+        if self._bytes_out_recv is None:
+            return
+        try:
+            with self._bytes_out_recv as messages:
+                async for msg in messages:
+                    if self._bytes_publisher is not None:
+                        await self._bytes_publisher.send(msg)
+        except (ClosedResourceError, BrokenResourceError):
+            pass
 
     async def _watch_runner(self) -> None:
         with self._cancel_watch_runner:
