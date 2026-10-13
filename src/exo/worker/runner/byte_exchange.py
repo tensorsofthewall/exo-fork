@@ -123,12 +123,18 @@ class RunnerByteExchange:
             time.sleep(POLL_S)
 
     def _linger_loop(self) -> None:
+        # Answer late peers for a bounded time, but keep consuming the inbox until close(): a peer republishes its (several KB) payload for its own linger
+        # period, and an unread inbox fills the OS pipe, blocks the Worker's mp.Queue feeder thread and hangs the exo process at interpreter exit.
         while not self._stop.wait(RESEND_INTERVAL_S * 2):
+            try:
+                self._drain_inbox()
+            except RunnerByteExchangeError:
+                return
             with self._lock:
                 done = list(self._completed.items())
                 last = self._last_complete
             if last is not None and time.monotonic() - last > LINGER_S:
-                return
+                continue
             for namespace, payload in done:
                 with contextlib.suppress(ClosedResourceError):
                     self._publish(namespace, payload)
