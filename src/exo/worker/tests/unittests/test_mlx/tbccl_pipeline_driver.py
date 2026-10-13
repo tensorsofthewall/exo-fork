@@ -122,6 +122,9 @@ class RecordingComm:
             self.sent.append(_digest(array))
         self.inner.flush_sends(sends)
 
+    def step_complete(self) -> None:
+        self.inner.step_complete()
+
     def barrier(self) -> None:
         self.inner.barrier()
 

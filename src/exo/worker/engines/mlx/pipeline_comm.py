@@ -30,6 +30,13 @@ class PipelineComm(Protocol):
         """Send every queued (array, dst) pair, in order."""
         ...
 
+    def step_complete(self) -> None:
+        """The stage output of this forward step has been evaluated, so every array returned by ``recv_like`` for the step is dead.
+
+        An implementation may recycle the receive destinations; one that does not has nothing to do.
+        """
+        ...
+
     def barrier(self) -> None: ...
 
     def any_true(self, value: bool) -> bool: ...
@@ -62,6 +69,9 @@ class MlxPipelineComm:
         for array, dst in sends:
             sent = self.send(array, dst)
             mx.async_eval(sent)
+
+    def step_complete(self) -> None:
+        pass
 
     def barrier(self) -> None:
         mx.eval(
