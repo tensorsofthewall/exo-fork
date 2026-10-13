@@ -113,6 +113,7 @@ The system uses event sourcing for state management:
 - **Two-node experiments** use an isolated `EXO_HOME=<dir under $HOME>` (also isolates models and custom cards), `--offline --namespace <unique>`, and macOS nodes inside a live ssh session. Custom model cards are
   reconciled away by the cluster state, and offline mode needs a `model.safetensors.index.json`; use a model whose card exists, with local files. Never download weights. Local copies: shared folder `win_hf_models` (Linux `/mnt/win_hf_models`, Mac `~/Desktop/win_hf_models`), copied to `~/.exo_p53/local_models/` on each host; see `../exo-tbccl/AGENTS.md` ("Models") and `../tbccl/docs/mac_thunderbolt_access.md` ("Model locations").
 - **Gotchas:** MLX ring init has no timeout (aborting a run mid-connect can wedge a Worker until its runner process is killed); SIGTERM may not stop an exo node (use the pid with `kill -9` as a last resort).
+- Setup: Linux `uv sync --extra mlx-cuda13 --group dev --all-packages` + `uv pip install torch==2.10.0` (cu130; Rust via rustup, edition 2024); Mac `uv sync --extra mlx --group dev --all-packages` (Metal Toolchain installed). `uv sync` removes the editable `exo-tbccl`; reinstall it. The fork is 9 commits over upstream `21a54c5e`; the Mac tree is synced with `git format-patch` / `git am`.
 - Local commits only; do not push without explicit approval; no AI attribution lines in commit messages for this work.
 
 ### Rust Components
