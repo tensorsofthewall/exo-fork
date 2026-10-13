@@ -5,7 +5,7 @@ import pytest
 
 from exo.shared.types.runner_bytes import RunnerBytesMessage
 from exo.shared.types.worker.instances import InstanceId
-from exo.utils.channels import MpReceiver, MpSender, mp_channel
+from exo.utils.channels import MpReceiver, MpSender, WouldBlock, mp_channel
 from exo.worker.runner.byte_exchange import RunnerByteExchange, RunnerByteExchangeError
 from exo.worker.runner_bytes_hub import RunnerBytesHub
 
@@ -224,3 +224,27 @@ def test_hub_buffers_messages_for_a_runner_that_does_not_exist_yet_and_is_bounde
             payload_b64="AA==",
         )
     )
+
+
+def test_inbox_keeps_being_drained_after_the_exchange_completes():
+    """Phase 68 (real exo + TBCCL run): after the bootstrap exchange a peer keeps republishing its (several KB) endpoint blob for its own linger period. If the
+    runner stops reading its inbox the OS pipe fills, the mp.Queue feeder thread in the Worker blocks, and the exo process then hangs at interpreter exit
+    (multiprocessing's Queue._finalize_join). The exchange must keep consuming (and discarding) late messages until it is closed."""
+    inst = InstanceId()
+    out_s, out_r = mp_channel[RunnerBytesMessage]()
+    in_s, in_r = mp_channel[RunnerBytesMessage]()
+    ex = RunnerByteExchange(inst, 0, 2, out_s, in_r)
+    try:
+        late = RunnerBytesMessage(instance_id=inst, namespace="ns", rank=1, world_size=2, payload_b64="A" * 6000)
+        in_s.send(late)
+        got = ex.all_gather("ns", b"zero", timeout_s=5)
+        assert got[0] == b"zero" and len(got[1]) == 4500
+        for _ in range(60):  # ~360 KB, far beyond a 64 KB pipe
+            in_s.send(late)
+        time.sleep(3.5)  # the linger loop wakes every RESEND_INTERVAL_S * 2 = 1 s
+        with pytest.raises(WouldBlock):
+            in_r.receive_nowait()  # nothing is left in the queue: the exchange consumed the late messages itself
+    finally:
+        ex.close()
+        for ch in (out_s, out_r, in_s, in_r):
+            ch.close()
