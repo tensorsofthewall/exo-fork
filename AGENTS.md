@@ -97,6 +97,25 @@ The system uses event sourcing for state management:
   - `tasks.py`: Task types for worker execution
   - `state.py`: Cluster state model
 
+### MlxTbccl: optional pipeline runtime over TBCCL (local, experimental)
+`InstanceMeta.MlxTbccl` moves pipeline-stage activations through the separate `exo-tbccl` package (TBCCL's C ABI) instead of `mx.distributed`; see `docs/mlx-tbccl.md`.
+- **Scope:** Pipeline sharding and text models only. Tensor parallelism and image/CFG models are rejected at placement and stay on `mx.distributed.Group`. exo must run without the package;
+  `exo.shared.tbccl_support.tbccl_available()` gates placement.
+- **Seams:** `exo/worker/engines/mlx/pipeline_comm.py` (`PipelineComm`, `MlxPipelineComm`, `CommGroup`, `comm_all_gather`, `release_comm`; `step_complete()` is the lifetime hook `PipelineLastLayer` calls right after the stage output is evaluated, a no-op for `MlxPipelineComm`); `tbccl_comm.py` builds the communicator from the instance;
+  `exo/worker/runner/byte_exchange.py` + `worker/runner_bytes_hub.py` + topic `RUNNER_BYTES` are a generic all-gather of opaque bytes between the runners of an instance (bootstrap data).
+  Runner-level agreements (`mx_barrier`, `mx_any`, `mx_all_gather_tasks`, KV-cache pressure) must go through `CommGroup` helpers, not `mx.distributed` directly.
+- **The Worker gets the `runner_bytes_*` channels once, from `Node` in `main.py`.** Upstream no longer rebuilds the Worker on master election (`announce_to_master` keeps the same one), so the channels persist. They are optional `Worker` arguments: a runner that asks for a byte exchange without them fails with a bounded `RunnerByteExchangeError`.
+- **Placement/shards are never modified for TBCCL:** reuse `PipelineShardMetadata`; one address per node that every peer reaches; per-peer addresses are rejected.
+- **Tests:** `test_pipeline_comm.py`, `test_byte_exchange.py`, `test_placement.py` run in the default suite. `test_tbccl_pipeline.py` (+ `tbccl_pipeline_driver.py`) is `slow`, spawns ranks, and skips without `exo-tbccl`.
+  Compare outputs bit for bit, hash every stage boundary, and never fork a process that imported MLX (use spawn).
+- **Running tests locally:** `uv run --no-sync` (a plain `uv run` may drop extras), `EXO_DASHBOARD_DIR=<empty dir>` (no npm needed), `EXO_OFFLINE=true HF_HUB_OFFLINE=1` (exo's test suite otherwise downloads tokenizer
+  files), run `--ignore=src/exo/download` and `src/exo/download` separately (module-name clash), `-m slow` for the slow tests. Baseline: one pre-existing failure, `rust/exo_rs/tests/test_python.py`.
+- **Two-node experiments** use an isolated `EXO_HOME=<dir under $HOME>` (also isolates models and custom cards), `--offline --namespace <unique>`, and macOS nodes inside a live ssh session. Custom model cards are
+  reconciled away by the cluster state, and offline mode needs a `model.safetensors.index.json`; use a model whose card exists, with local files. Never download weights. Local copies: shared folder `win_hf_models` (Linux `/mnt/win_hf_models`, Mac `~/Desktop/win_hf_models`), copied to `~/.exo_p53/local_models/` on each host; see `../exo-tbccl/AGENTS.md` ("Models") and `../tbccl/docs/mac_thunderbolt_access.md` ("Model locations").
+- **Gotchas:** MLX ring init has no timeout (aborting a run mid-connect can wedge a Worker until its runner process is killed); SIGTERM may not stop an exo node (use the pid with `kill -9` as a last resort).
+- Setup: Linux `uv sync --extra mlx-cuda13 --group dev --all-packages` + `uv pip install torch==2.10.0` (cu130; Rust via rustup, edition 2024); Mac `uv sync --extra mlx --group dev --all-packages` (Metal Toolchain installed). `uv sync` removes the editable `exo-tbccl`; reinstall it. The integration is a short series of commits over upstream exo `75d8ad2bc1eac25aaf7adb39c0784ad0def8c1b6` (2026-10-12), re-derived on that base in Phase 75C.5; the series is the commits between that SHA and the branch head (count them with `git log --oneline 75d8ad2b..HEAD`, do not write the number down). The Mac tree is synced with `git format-patch` / `git am`.
+- Local commits only; do not push without explicit approval; no AI attribution lines in commit messages for this work.
+
 ### Rust Components
 Rust code in `rust/` provides:
 - `networking`: zenoh networking (gossipsub, peer discovery)

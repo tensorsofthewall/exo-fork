@@ -12,6 +12,7 @@ from exo.worker.engines.mlx.cache import (
     snapshot_ssm_states,
 )
 from exo.worker.engines.mlx.generator.generate import prefill as mlx_prefill
+from exo.worker.engines.mlx.pipeline_comm import CommGroup
 from exo.worker.engines.mlx.types import KVCacheType, Model
 from exo.worker.engines.mlx.utils_mlx import fix_unmatched_think_end_tokens
 from exo.worker.runner.bootstrap import logger
@@ -21,7 +22,7 @@ def run_prefill_for_request(
     *,
     model: Model,
     tokenizer: TokenizerWrapper,
-    group: mx.distributed.Group | None,
+    group: CommGroup | None,
     kv_prefix_cache: KVPrefixCache | None,
     request: PrefillRequest,
 ) -> KVCacheType:

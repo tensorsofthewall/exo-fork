@@ -43,6 +43,7 @@ from exo.shared.types.events import (
     TopologyEdgeDeleted,
 )
 from exo.shared.types.multiaddr import Multiaddr
+from exo.shared.types.runner_bytes import RunnerBytesMessage
 from exo.shared.types.state import State
 from exo.shared.types.tasks import (
     CancelTask,
@@ -68,6 +69,7 @@ from exo.utils.keyed_backoff import KeyedBackoff
 from exo.utils.task_group import TaskGroup
 from exo.worker.plan import plan
 from exo.worker.runner.supervisor import RunnerSupervisor
+from exo.worker.runner_bytes_hub import RunnerBytesHub
 
 # How often the custom model cards saved on this node are synced with the cluster state,
 # and how often the ones the cluster doesn't know yet are announced to the master.
@@ -89,8 +91,15 @@ class Worker:
         command_sender: Sender[ForwarderCommand],
         download_command_sender: Sender[ForwarderDownloadCommand],
         api_port: int,
+        # The generic runner byte exchange (used by MlxTbccl). Without them a runner that asks for an exchange
+        # fails with a bounded RunnerByteExchangeError, so Worker callers that never place MlxTbccl need not pass them.
+        runner_bytes_sender: Sender[RunnerBytesMessage] | None = None,
+        runner_bytes_receiver: Receiver[RunnerBytesMessage] | None = None,
     ):
         self.node_id: NodeId = node_id
+        self.runner_bytes_sender = runner_bytes_sender
+        self.runner_bytes_receiver = runner_bytes_receiver
+        self.runner_bytes_hub = RunnerBytesHub()
         self.event_receiver = event_receiver
         self.event_sender = event_sender
         self.command_sender = command_sender
@@ -142,6 +151,7 @@ class Worker:
                 tg.start_soon(self._event_applier)
                 tg.start_soon(self._poll_connection_updates)
                 tg.start_soon(self._reconcile_custom_cards)
+                tg.start_soon(self._route_runner_bytes)
         except* (EventRouterBrokenResourceError, EventRouterClosedResourceError):
             # Event router has been closed (try-star syntax handles error groups)
             pass
@@ -151,6 +161,8 @@ class Worker:
             self.event_sender.close()
             self.command_sender.close()
             self.download_command_sender.close()
+            if self.runner_bytes_sender is not None:
+                self.runner_bytes_sender.close()
             for runner in self.runners.values():
                 runner.shutdown()
             self._stopped.set()
@@ -561,10 +573,23 @@ class Worker:
         runner = await RunnerSupervisor.create(
             bound_instance=task.bound_instance,
             event_sender=self.event_sender.clone(),
+            bytes_hub=self.runner_bytes_hub,
+            bytes_publisher=(
+                None
+                if self.runner_bytes_sender is None
+                else self.runner_bytes_sender.clone()
+            ),
         )
         self.runners[task.bound_instance.bound_runner_id] = runner
         self._tg.start_soon(runner.run)
         return runner
+
+    async def _route_runner_bytes(self):
+        # Runner byte-exchange messages from other nodes -> the local runner of that instance.
+        if self.runner_bytes_receiver is None:
+            return
+        async for msg in self.runner_bytes_receiver:
+            self.runner_bytes_hub.deliver(msg)
 
     async def _poll_connection_updates(self):
         while True:

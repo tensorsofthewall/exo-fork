@@ -5,7 +5,6 @@ from collections.abc import Generator, Iterator
 from dataclasses import dataclass, field
 from typing import BinaryIO
 
-import mlx.core as mx
 from mlx_lm.tokenizer_utils import TokenizerWrapper
 
 from exo.shared.constants import EXO_MAX_CONCURRENT_REQUESTS
@@ -36,6 +35,7 @@ from exo.worker.engines.mlx.generator.generate import (
     mlx_generate,
     warmup_inference,
 )
+from exo.worker.engines.mlx.pipeline_comm import CommGroup, release_comm
 from exo.worker.engines.mlx.types import Model
 from exo.worker.engines.mlx.utils_mlx import (
     apply_chat_template,
@@ -90,7 +90,7 @@ def _check_for_debug_prompts(task_params: TextGenerationTaskParams) -> None:
 class SequentialGenerator(Engine):
     model: Model
     tokenizer: TokenizerWrapper
-    group: mx.distributed.Group | None
+    group: CommGroup | None
     kv_prefix_cache: KVPrefixCache | None
     tool_parser: ToolParser | None
     model_id: ModelId
@@ -298,6 +298,7 @@ class SequentialGenerator(Engine):
         )
 
     def close(self) -> None:
+        release_comm(self.group)  # before the model state is destroyed
         del self.model, self.tokenizer, self.group
 
     def serve_prefill(self, request: PrefillRequest, wfile: BinaryIO) -> None:
@@ -321,7 +322,7 @@ class SequentialGenerator(Engine):
 class BatchGenerator(Engine):
     model: Model
     tokenizer: TokenizerWrapper
-    group: mx.distributed.Group | None
+    group: CommGroup | None
     kv_prefix_cache: KVPrefixCache | None
     tool_parser: ToolParser | None
     model_id: ModelId
@@ -565,6 +566,7 @@ class BatchGenerator(Engine):
 
     def close(self) -> None:
         self._gen.close()
+        release_comm(self.group)  # before the model state is destroyed
         del self.model, self.tokenizer, self.group
 
     def serve_prefill(self, request: PrefillRequest, wfile: BinaryIO) -> None:

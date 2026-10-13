@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from exo.worker.engines.mlx.vision import VisionProcessor
+    from exo.worker.runner.byte_exchange import RunnerByteExchange
 
 # Monkey-patch for transformers 5.x compatibility
 # Kimi's tokenization_kimi.py imports bytes_to_unicode from the old location
@@ -51,6 +52,7 @@ from exo.shared.types.worker.instances import (
     BoundInstance,
     MlxJacclInstance,
     MlxRingInstance,
+    MlxTbcclInstance,
 )
 from exo.shared.types.worker.runner_response import ModelLoadingResponse
 from exo.shared.types.worker.shards import (
@@ -64,6 +66,11 @@ from exo.worker.engines.mlx.auto_parallel import (
     get_layers,
     pipeline_auto_parallel,
     tensor_auto_parallel,
+)
+from exo.worker.engines.mlx.pipeline_comm import (
+    CommGroup,
+    comm_all_gather,
+    release_comm,
 )
 from exo.worker.engines.mlx.types import Model
 from exo.worker.runner.bootstrap import logger
@@ -90,7 +97,7 @@ class HostList(RootModel[list[str]]):
 
 def mlx_distributed_init(
     bound_instance: BoundInstance,
-) -> mx.distributed.Group:
+) -> CommGroup:
     """
     Initialize MLX distributed.
     """
@@ -143,6 +150,11 @@ def mlx_distributed_init(
                 os.environ["MLX_JACCL_COORDINATOR"] = jaccl_coordinator
                 group = mx.distributed.init(backend="jaccl", strict=True)
 
+            case MlxTbcclInstance():
+                raise RuntimeError(
+                    "MlxTbccl instances do not use mx.distributed; the runner builds a TbcclPipelineComm instead"
+                )
+
         logger.info(f"Rank {rank} mlx distributed initialization complete")
 
         return group
@@ -150,7 +162,8 @@ def mlx_distributed_init(
 
 def initialize_mlx(
     bound_instance: BoundInstance,
-) -> mx.distributed.Group:
+    byte_exchange: "RunnerByteExchange | None" = None,
+) -> CommGroup:
     # should we unseed it?
     # TODO: pass in seed from params
     mx.random.seed(42)
@@ -158,12 +171,16 @@ def initialize_mlx(
     assert len(bound_instance.instance.shard_assignments.node_to_runner) > 1, (
         "Tried to initialize mlx for a single node instance"
     )
+    if isinstance(bound_instance.instance, MlxTbcclInstance):
+        from exo.worker.engines.mlx.tbccl_comm import init_tbccl_pipeline_comm
+
+        return init_tbccl_pipeline_comm(bound_instance, byte_exchange)
     return mlx_distributed_init(bound_instance)
 
 
 def load_mlx_items(
     bound_instance: BoundInstance,
-    group: mx.distributed.Group | None,
+    group: CommGroup | None,
 ) -> Generator[
     ModelLoadingResponse, None, tuple[Model, TokenizerWrapper, "VisionProcessor | None"]
 ]:
@@ -232,7 +249,7 @@ def load_mlx_items(
 
 def shard_and_load(
     shard_metadata: ShardMetadata,
-    group: mx.distributed.Group,
+    group: CommGroup,
 ) -> Generator[ModelLoadingResponse, None, tuple[nn.Module, TokenizerWrapper]]:
     model_path = build_model_path(shard_metadata.model_card.model_id)
 
@@ -264,6 +281,10 @@ def shard_and_load(
     match shard_metadata:
         case TensorShardMetadata():
             logger.info(f"loading model from {model_path} with tensor parallelism")
+            if not isinstance(group, mx.distributed.Group):
+                raise RuntimeError(
+                    "tensor parallelism requires an mx.distributed group (MlxTbccl is pipeline only)"
+                )
             model = yield from tensor_auto_parallel(model, group)
         case PipelineShardMetadata():
             logger.info(f"loading model from {model_path} with pipeline parallelism")
@@ -822,18 +843,23 @@ def set_wired_limit_for_model(model_size: Memory):
 def mlx_cleanup(
     model: Model | None,
     tokenizer: TokenizerWrapper | None,
-    group: mx.distributed.Group | None,
+    group: CommGroup | None,
 ) -> None:
-    del model, tokenizer, group
+    del model, tokenizer
+    # Release the communicator (and every borrowed buffer) before MLX/model state goes away.
+    release_comm(group)
+    del group
     mx.clear_cache()
     import gc
 
     gc.collect()
 
 
-def mx_any(bool_: bool, group: mx.distributed.Group | None) -> bool:
+def mx_any(bool_: bool, group: CommGroup | None) -> bool:
     if group is None:
         return bool_
+    if not isinstance(group, mx.distributed.Group):
+        return group.any_true(bool_)
     num_true = mx.distributed.all_sum(
         mx.array(bool_), group=group, stream=mx.default_stream(mx.Device(mx.cpu))
     )
@@ -855,8 +881,11 @@ def use_generation_stream_by_default() -> None:
     mx.set_default_stream(stream)
 
 
-def mx_barrier(group: mx.distributed.Group | None):
+def mx_barrier(group: CommGroup | None):
     if group is None:
+        return
+    if not isinstance(group, mx.distributed.Group):
+        group.barrier()
         return
     mx.eval(
         mx.distributed.all_sum(
@@ -902,7 +931,7 @@ def _parse_kimi_tool_calls(text: str):
 
 def mx_all_gather_tasks(
     tasks: list[TextGeneration],
-    group: mx.distributed.Group | None,
+    group: CommGroup | None,
 ) -> tuple[list[TextGeneration], list[TextGeneration]]:
     def encode_task_id(task_id: TaskId) -> list[int]:
         utf8_task_id = task_id.encode()
@@ -920,7 +949,7 @@ def mx_all_gather_tasks(
     n_tasks = len(tasks)
     all_counts = cast(
         list[int],
-        mx.distributed.all_gather(mx.array([n_tasks]), group=group).tolist(),
+        comm_all_gather(mx.array([n_tasks]), group).tolist(),
     )
     max_tasks = max(all_counts)
     world_size: int = 1 if group is None else group.size()
@@ -936,7 +965,7 @@ def mx_all_gather_tasks(
 
     gathered = cast(
         list[list[list[int]]],
-        mx.distributed.all_gather(mx.array(padded), group=group)
+        comm_all_gather(mx.array(padded), group)
         .reshape(world_size, max_tasks, -1)
         .tolist(),
     )

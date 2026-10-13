@@ -24,6 +24,7 @@ from mlx_lm.tokenizer_utils import TokenizerWrapper
 
 from exo.shared.types.memory import Memory
 from exo.worker.engines.mlx.constants import CACHE_GROUP_SIZE, KV_CACHE_BITS
+from exo.worker.engines.mlx.pipeline_comm import CommGroup, comm_all_gather
 from exo.worker.engines.mlx.types import KVCacheType, Model
 from exo.worker.runner.bootstrap import logger
 
@@ -242,7 +243,7 @@ def has_non_kv_caches(cache: KVCacheType) -> bool:
 
 
 class KVPrefixCache:
-    def __init__(self, group: mx.distributed.Group | None):
+    def __init__(self, group: CommGroup | None):
         self.prompts: list[mx.array] = []  # mx array of tokens (ints)
         self.caches: list[KVCacheType] = []
         self._snapshots: list[list[CacheSnapshot] | None] = []
@@ -482,9 +483,9 @@ class KVPrefixCache:
         # A cache hit changes how much of a prompt each rank prefills, so every rank must
         # evict the same entries: evict if any rank is under memory pressure or over its
         # budget (each rank holds different layers, so their entries differ in size).
-        flags = mx.distributed.all_gather(
+        flags = comm_all_gather(
             mx.array([local_pressure, float(over_budget)], dtype=mx.float32),
-            group=self._group,
+            self._group,
         ).reshape(-1, 2)
         # .tolist() evals.
         worst_pressure, any_over_budget = cast(

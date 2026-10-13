@@ -57,6 +57,7 @@ from exo.worker.engines.mlx.constants import (
     MAX_TOKENS,
 )
 from exo.worker.engines.mlx.generator.remote_prefill import remote_prefill
+from exo.worker.engines.mlx.pipeline_comm import CommGroup, comm_all_gather
 from exo.worker.engines.mlx.types import KVCacheType, Model
 from exo.worker.engines.mlx.utils_mlx import (
     apply_chat_template,
@@ -169,7 +170,7 @@ def pipeline_parallel_prefill(
     kv_bits: int | None,
     prompt_progress_callback: Callable[[int, int], None],
     distributed_prompt_progress_callback: Callable[[], None] | None,
-    group: mx.distributed.Group,
+    group: CommGroup,
 ) -> None:
     """Prefill the KV cache for pipeline parallel with overlapping stages.
 
@@ -284,7 +285,7 @@ def prefill(
     sampler: Callable[[mx.array], mx.array],
     prompt_tokens: mx.array,
     cache: KVCacheType,
-    group: mx.distributed.Group | None,
+    group: CommGroup | None,
     on_prefill_progress: Callable[[int, int], None] | None,
     distributed_prompt_progress_callback: Callable[[], None] | None,
 ) -> tuple[float, int, list[CacheSnapshot]]:
@@ -401,7 +402,7 @@ def prefill(
 def warmup_inference(
     model: Model,
     tokenizer: TokenizerWrapper,
-    group: mx.distributed.Group | None,
+    group: CommGroup | None,
     model_id: ModelId,
 ) -> int:
     logger.info(f"warming up inference for instance: {model_id}")
@@ -449,12 +450,7 @@ def warmup_inference(
     logger.info(f"warmed up by generating {tokens_generated} tokens")
     if group is not None:
         check_for_cancel_every = int(
-            mx.max(
-                mx.distributed.all_gather(
-                    mx.array([check_for_cancel_every]),
-                    group=group,
-                )
-            ).item()
+            mx.max(comm_all_gather(mx.array([check_for_cancel_every]), group)).item()
         )
 
     logger.info(
@@ -537,7 +533,7 @@ def mlx_generate(
     task: TextGenerationTaskParams,
     prompt: str,
     kv_prefix_cache: KVPrefixCache | None,
-    group: mx.distributed.Group | None,
+    group: CommGroup | None,
     on_prefill_progress: Callable[[int, int], None] | None = None,
     distributed_prompt_progress_callback: Callable[[], None] | None = None,
     on_generation_token: Callable[[], None] | None = None,

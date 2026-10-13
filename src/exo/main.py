@@ -85,6 +85,7 @@ class Node:
         await router.register_topic(topics.ELECTION_MESSAGES)
         await router.register_topic(topics.CONNECTION_MESSAGES)
         await router.register_topic(topics.DOWNLOAD_COMMANDS)
+        await router.register_topic(topics.RUNNER_BYTES)
         event_router = EventRouter(
             session_id,
             command_sender=router.sender(topics.COMMANDS),
@@ -131,6 +132,8 @@ class Node:
                 command_sender=router.sender(topics.COMMANDS),
                 download_command_sender=router.sender(topics.DOWNLOAD_COMMANDS),
                 api_port=args.api_port,
+                runner_bytes_sender=router.sender(topics.RUNNER_BYTES),
+                runner_bytes_receiver=router.receiver(topics.RUNNER_BYTES),
             )
         else:
             worker = None

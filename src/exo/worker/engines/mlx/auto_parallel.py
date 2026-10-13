@@ -63,20 +63,28 @@ from mlx_lm.models.step3p5 import Step3p5Model as Step35InnerModel
 
 from exo.shared.types.worker.runner_response import ModelLoadingResponse
 from exo.shared.types.worker.shards import PipelineShardMetadata
+from exo.worker.engines.mlx.pipeline_comm import (
+    CommGroup,
+    PipelineComm,
+    as_pipeline_comm,
+)
 from exo.worker.runner.bootstrap import logger
 
 if TYPE_CHECKING:
     from mlx_lm.models.cache import Cache
 
 
-_pending_prefill_sends: list[tuple[mx.array, int, mx.distributed.Group]] = []
+_pending_prefill_sends: list[tuple[mx.array, int, PipelineComm]] = []
 
 
 def flush_prefill_sends() -> None:
-    for output, dst, group in _pending_prefill_sends:
-        sent = mx.distributed.send(output, dst, group=group)
-        mx.async_eval(sent)
+    # Group by communicator (queue order kept): a comm can submit every send before waiting on any of them.
+    by_comm: dict[int, tuple[PipelineComm, list[tuple[mx.array, int]]]] = {}
+    for output, dst, comm in _pending_prefill_sends:
+        by_comm.setdefault(id(comm), (comm, []))[1].append((output, dst))
     _pending_prefill_sends.clear()
+    for comm, sends in by_comm.values():
+        comm.flush_sends(sends)
 
 
 def clear_prefill_sends() -> None:
@@ -122,11 +130,11 @@ class PipelineFirstLayer(CustomMlxLayer):
         self,
         original_layer: _LayerCallable,
         r: int,
-        group: mx.distributed.Group,
+        group: CommGroup,
     ):
         super().__init__(original_layer)
         self.r: int = r
-        self.group = group
+        self.comm = as_pipeline_comm(group)
         self.is_prefill: bool = False
 
     def __call__(self, x: mx.array, *args: object, **kwargs: object) -> mx.array:
@@ -134,7 +142,7 @@ class PipelineFirstLayer(CustomMlxLayer):
             # We want to avoid GPU timeout errors by evalling the distributed operation
             # so that it stays on CPU, which does not have a timeout.
             mx.eval(x)
-            x = mx.distributed.recv_like(x, (self.r - 1), group=self.group)
+            x = self.comm.recv_like(x, self.r - 1)
             mx.eval(x)
         return self.original_layer(x, *args, **kwargs)
 
@@ -145,12 +153,12 @@ class PipelineLastLayer(CustomMlxLayer):
         original_layer: _LayerCallable,
         r: int,
         s: int,
-        group: mx.distributed.Group,
+        group: CommGroup,
     ):
         super().__init__(original_layer)
         self.r: int = r
         self.s: int = s
-        self.group = group
+        self.comm = as_pipeline_comm(group)
         self.original_layer_signature = signature(self.original_layer.__call__)
         self.is_prefill: bool = False
         self.queue_sends: bool = False
@@ -165,16 +173,16 @@ class PipelineLastLayer(CustomMlxLayer):
         # Eval layer output to materialize it before send — this splits the graph
         # so the send is isolated and the receiving rank's recv can complete.
         mx.eval(output)
+        # Everything computed from this step's received activation has now been evaluated.
+        self.comm.step_complete()
 
         if self.r != self.s - 1:
             if self.queue_sends:
                 _pending_prefill_sends.append(
-                    (output, (self.r + 1) % self.s, self.group)
+                    (output, (self.r + 1) % self.s, self.comm)
                 )
             else:
-                output = mx.distributed.send(
-                    output, (self.r + 1) % self.s, group=self.group
-                )
+                output = self.comm.send(output, (self.r + 1) % self.s)
             if cache is not None:
                 # CacheList (used by MLA models like DeepSeekV32, GLM MoE DSA)
                 # doesn't have .keys directly; access via first sub-cache.
@@ -186,9 +194,7 @@ class PipelineLastLayer(CustomMlxLayer):
                 mx.eval(_cache.keys)  # type: ignore
 
         if not self.is_prefill:
-            output = mx.distributed.all_gather(output, group=self.group)[
-                -output.shape[0] :
-            ]
+            output = self.comm.all_gather(output)[-output.shape[0] :]
             mx.eval(output)
 
         return output
@@ -275,7 +281,7 @@ def _patch_hybrid_cache(
 
 def pipeline_auto_parallel(
     model: nn.Module,
-    group: mx.distributed.Group,
+    group: CommGroup,
     model_shard_meta: PipelineShardMetadata,
 ) -> Generator[ModelLoadingResponse, None, nn.Module]:
     """
@@ -300,12 +306,13 @@ def pipeline_auto_parallel(
         mx.clear_cache()
         yield ModelLoadingResponse(layers_loaded=i, total=total)
 
-    layers[0] = PipelineFirstLayer(layers[0], device_rank, group=group)
+    comm = as_pipeline_comm(group)
+    layers[0] = PipelineFirstLayer(layers[0], device_rank, group=comm)
     layers[-1] = PipelineLastLayer(
         layers[-1],
         device_rank,
         world_size,
-        group=group,
+        group=comm,
     )
 
     if isinstance(inner_model_instance, GptOssMoeModel):
@@ -395,7 +402,7 @@ def pipeline_auto_parallel(
     return patch_pipeline_model(model, group)
 
 
-def patch_pipeline_model[T](model: T, group: mx.distributed.Group) -> T:
+def patch_pipeline_model[T](model: T, group: CommGroup) -> T:
     # Patch __call__ on the model's class
     cls = model.__class__
     original_call = cls.__call__  # type :ignore
