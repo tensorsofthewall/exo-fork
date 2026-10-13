@@ -63,7 +63,11 @@ from mlx_lm.models.step3p5 import Step3p5Model as Step35InnerModel
 
 from exo.shared.types.worker.runner_response import ModelLoadingResponse
 from exo.shared.types.worker.shards import PipelineShardMetadata
-from exo.worker.engines.mlx.pipeline_comm import PipelineComm, as_pipeline_comm
+from exo.worker.engines.mlx.pipeline_comm import (
+    CommGroup,
+    PipelineComm,
+    as_pipeline_comm,
+)
 from exo.worker.runner.bootstrap import logger
 
 if TYPE_CHECKING:
@@ -74,10 +78,13 @@ _pending_prefill_sends: list[tuple[mx.array, int, PipelineComm]] = []
 
 
 def flush_prefill_sends() -> None:
+    # Group by communicator (queue order kept): a comm can submit every send before waiting on any of them.
+    by_comm: dict[int, tuple[PipelineComm, list[tuple[mx.array, int]]]] = {}
     for output, dst, comm in _pending_prefill_sends:
-        sent = comm.send(output, dst)
-        mx.async_eval(sent)
+        by_comm.setdefault(id(comm), (comm, []))[1].append((output, dst))
     _pending_prefill_sends.clear()
+    for comm, sends in by_comm.values():
+        comm.flush_sends(sends)
 
 
 def clear_prefill_sends() -> None:
@@ -123,7 +130,7 @@ class PipelineFirstLayer(CustomMlxLayer):
         self,
         original_layer: _LayerCallable,
         r: int,
-        group: mx.distributed.Group | PipelineComm,
+        group: CommGroup,
     ):
         super().__init__(original_layer)
         self.r: int = r
@@ -146,7 +153,7 @@ class PipelineLastLayer(CustomMlxLayer):
         original_layer: _LayerCallable,
         r: int,
         s: int,
-        group: mx.distributed.Group | PipelineComm,
+        group: CommGroup,
     ):
         super().__init__(original_layer)
         self.r: int = r
@@ -272,7 +279,7 @@ def _patch_hybrid_cache(
 
 def pipeline_auto_parallel(
     model: nn.Module,
-    group: mx.distributed.Group | PipelineComm,
+    group: CommGroup,
     model_shard_meta: PipelineShardMetadata,
 ) -> Generator[ModelLoadingResponse, None, nn.Module]:
     """
@@ -393,7 +400,7 @@ def pipeline_auto_parallel(
     return patch_pipeline_model(model, group)
 
 
-def patch_pipeline_model[T](model: T, group: mx.distributed.Group | PipelineComm) -> T:
+def patch_pipeline_model[T](model: T, group: CommGroup) -> T:
     # Patch __call__ on the model's class
     cls = model.__class__
     original_call = cls.__call__  # type :ignore

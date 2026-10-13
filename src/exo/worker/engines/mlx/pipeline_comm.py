@@ -5,6 +5,7 @@ cross-rank agreements. Tensor parallelism is deliberately NOT routed through
 this protocol: it keeps using ``mx.distributed.Group`` directly.
 """
 
+from collections.abc import Sequence
 from typing import Protocol
 
 import mlx.core as mx
@@ -23,6 +24,10 @@ class PipelineComm(Protocol):
 
     def all_gather(self, array: mx.array) -> mx.array:
         """Rank-order concatenation along axis 0."""
+        ...
+
+    def flush_sends(self, sends: Sequence[tuple[mx.array, int]]) -> None:
+        """Send every queued (array, dst) pair, in order."""
         ...
 
     def barrier(self) -> None: ...
@@ -53,6 +58,11 @@ class MlxPipelineComm:
     def all_gather(self, array: mx.array) -> mx.array:
         return mx.distributed.all_gather(array, group=self.group)
 
+    def flush_sends(self, sends: Sequence[tuple[mx.array, int]]) -> None:
+        for array, dst in sends:
+            sent = self.send(array, dst)
+            mx.async_eval(sent)
+
     def barrier(self) -> None:
         mx.eval(
             mx.distributed.all_sum(
@@ -75,7 +85,27 @@ class MlxPipelineComm:
         pass
 
 
-def as_pipeline_comm(comm: "PipelineComm | mx.distributed.Group") -> PipelineComm:
+CommGroup = mx.distributed.Group | PipelineComm
+"""What the runner threads through generation: an mx.distributed group (ring, JACCL) or a PipelineComm (e.g. TBCCL)."""
+
+
+def as_pipeline_comm(comm: CommGroup) -> PipelineComm:
     if isinstance(comm, mx.distributed.Group):
         return MlxPipelineComm(comm)
     return comm
+
+
+def comm_all_gather(array: mx.array, group: CommGroup | None) -> mx.array:
+    if group is None or isinstance(group, mx.distributed.Group):
+        return mx.distributed.all_gather(array, group=group)
+    return group.all_gather(array)
+
+
+def release_comm(group: CommGroup | None) -> None:
+    """Close a PipelineComm (idempotent); mx.distributed groups have no explicit close."""
+    if (
+        group is not None
+        and not isinstance(group, mx.distributed.Group)
+        and hasattr(group, "close")
+    ):
+        group.close()

@@ -3,7 +3,6 @@ import os
 from collections.abc import Generator
 from dataclasses import dataclass
 
-import mlx.core as mx
 from mlx_lm.tokenizer_utils import TokenizerWrapper
 
 from exo.shared.types.common import ModelId
@@ -13,6 +12,7 @@ from exo.shared.types.worker.instances import BoundInstance
 from exo.shared.types.worker.runner_response import ModelLoadingResponse
 from exo.utils.channels import MpReceiver, MpSender
 from exo.worker.engines.base import Builder, Engine
+from exo.worker.engines.mlx.pipeline_comm import CommGroup, release_comm
 from exo.worker.runner.bootstrap import logger
 from exo.worker.runner.llm_inference.batch_generator import (
     BatchGenerator,
@@ -37,14 +37,14 @@ class MlxBuilder(Builder):
     cancel_receiver: MpReceiver[TaskId]
     inference_model: Model | None = None
     tokenizer: TokenizerWrapper | None = None
-    group: mx.distributed.Group | None = None
+    group: CommGroup | None = None
     vision_processor: VisionProcessor | None = None
 
     def __post_init__(self) -> None:
         use_generation_stream_by_default()
 
     def connect(self, bound_instance: BoundInstance) -> None:
-        self.group = initialize_mlx(bound_instance)
+        self.group = initialize_mlx(bound_instance, self.byte_exchange)
 
     def load(self, bound_instance: BoundInstance) -> Generator[ModelLoadingResponse]:
         (
@@ -59,6 +59,7 @@ class MlxBuilder(Builder):
         with contextlib.suppress(NameError, AttributeError):
             del self.tokenizer
         with contextlib.suppress(NameError, AttributeError):
+            release_comm(self.group)
             del self.group
 
     def build(
