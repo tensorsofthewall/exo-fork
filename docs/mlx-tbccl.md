@@ -16,10 +16,14 @@ thunderbolt interface is preferred, as for the ring backend).
 
 ## Requirements
 
-- An installed TBCCL >= 0.5 on each node and the `exo-tbccl` package in exo's environment (`exo_tbccl.is_available()`); exo runs normally
+- An installed TBCCL 0.6.0 or newer (C ABI 1, wire protocol 4) on each node and the `exo-tbccl` package in exo's environment (`exo_tbccl.is_available()`); exo runs normally
   without them and `MlxTbccl` placement then fails with a message saying what is missing. The package is built locally against the TBCCL install
   (not on PyPI), so it is not an exo dependency.
 - Backends: MlxMetal, MlxCuda, MlxCpu (a Mac and a Linux/CUDA node can be mixed).
+
+## Upstream base
+
+The integration is maintained as a short series of commits over upstream exo `75d8ad2b` (2026-10-12): the `PipelineComm` seam, the `MlxTbccl` instance type and its placement rules, the generic runner byte exchange, `TbcclPipelineComm`, and the synthetic pipeline driver. Without the optional package exo behaves as upstream.
 
 ## Limitations
 
