@@ -9,10 +9,12 @@ from exo.master.placement_utils import (
     get_mlx_jaccl_coordinators,
     get_mlx_jaccl_devices_matrix,
     get_mlx_ring_hosts_by_node,
+    get_mlx_tbccl_hosts_by_node,
     get_shard_assignments,
     get_smallest_cycles,
 )
-from exo.shared.models.model_cards import ModelId
+from exo.shared.models.model_cards import ModelId, ModelTask
+from exo.shared.tbccl_support import tbccl_available
 from exo.shared.topology import Topology
 from exo.shared.types.backends import Backend
 from exo.shared.types.commands import (
@@ -45,6 +47,7 @@ from exo.shared.types.worker.instances import (
     InstanceMeta,
     MlxJacclInstance,
     MlxRingInstance,
+    MlxTbcclInstance,
 )
 from exo.shared.types.worker.runners import (
     RunnerId,
@@ -66,6 +69,7 @@ from exo.utils.ports import random_ephemeral_port
 INSTANCE_META_BACKENDS: dict[InstanceMeta, list[Backend]] = {
     InstanceMeta.MlxRing: [Backend.MlxMetal, Backend.MlxCuda, Backend.MlxCpu],
     InstanceMeta.MlxJaccl: [Backend.MlxMetal],
+    InstanceMeta.MlxTbccl: [Backend.MlxMetal, Backend.MlxCuda, Backend.MlxCpu],
 }
 
 
@@ -188,6 +192,22 @@ def memory_once_loaded(
     }
 
 
+def _validate_tbccl_request(command: PlaceInstance) -> None:
+    """MlxTbccl is pipeline-parallel text generation only, and only when the optional exo-tbccl package can be used."""
+    if command.sharding != Sharding.Pipeline:
+        raise ValueError(
+            "MlxTbccl supports only Pipeline sharding (no tensor parallelism)"
+        )
+    if (
+        ModelTask.TextToImage in command.model_card.tasks
+        or ModelTask.ImageToImage in command.model_card.tasks
+    ):
+        raise ValueError("MlxTbccl does not support image or CFG-parallel models")
+    available, reason = tbccl_available()
+    if not available:
+        raise ValueError(f"MlxTbccl requires the optional exo-tbccl package: {reason}")
+
+
 def place_instance(
     command: PlaceInstance,
     topology: Topology,
@@ -207,6 +227,9 @@ def place_instance(
     """
     if runners is not None:
         node_memory = memory_once_loaded(node_memory, current_instances, runners)
+    if command.instance_meta == InstanceMeta.MlxTbccl:
+        _validate_tbccl_request(command)
+
     cycles = topology.get_cycles()
     if not cycles:
         raise ValueError("No nodes are available")
@@ -394,6 +417,16 @@ def place_instance(
                 shard_assignments=shard_assignments,
                 jaccl_devices=mlx_jaccl_devices,
                 jaccl_coordinators=mlx_jaccl_coordinators,
+            )
+        case InstanceMeta.MlxTbccl:
+            target_instances[instance_id] = MlxTbcclInstance(
+                instance_id=instance_id,
+                shard_assignments=shard_assignments,
+                hosts_by_node=get_mlx_tbccl_hosts_by_node(
+                    selected_cycle=selected_cycle,
+                    cycle_digraph=cycle_digraph,
+                    node_network=node_network,
+                ),
             )
         case InstanceMeta.MlxRing:
             ephemeral_port = random_ephemeral_port()

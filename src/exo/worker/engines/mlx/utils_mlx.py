@@ -51,6 +51,7 @@ from exo.shared.types.worker.instances import (
     BoundInstance,
     MlxJacclInstance,
     MlxRingInstance,
+    MlxTbcclInstance,
 )
 from exo.shared.types.worker.runner_response import ModelLoadingResponse
 from exo.shared.types.worker.shards import (
@@ -142,6 +143,11 @@ def mlx_distributed_init(
                 os.environ["MLX_RANK"] = str(rank)
                 os.environ["MLX_JACCL_COORDINATOR"] = jaccl_coordinator
                 group = mx.distributed.init(backend="jaccl", strict=True)
+
+            case MlxTbcclInstance():
+                raise RuntimeError(
+                    "MlxTbccl instances do not use mx.distributed; the runner builds a TbcclPipelineComm instead"
+                )
 
         logger.info(f"Rank {rank} mlx distributed initialization complete")
 
