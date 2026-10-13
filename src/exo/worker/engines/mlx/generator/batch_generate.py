@@ -45,6 +45,7 @@ from exo.worker.engines.mlx.patches.opt_batch_gen import (
     set_needs_topk,
     take_ready_topk,
 )
+from exo.worker.engines.mlx.pipeline_comm import CommGroup
 from exo.worker.engines.mlx.types import KVCacheType, Model
 from exo.worker.engines.mlx.utils_mlx import (
     fix_unmatched_think_end_tokens,
@@ -94,7 +95,7 @@ class _EngineTask:
 class ExoBatchGenerator:
     model: Model
     tokenizer: TokenizerWrapper
-    group: mx.distributed.Group | None
+    group: CommGroup | None
     kv_prefix_cache: KVPrefixCache | None
     vision_processor: VisionProcessor | None = None
 

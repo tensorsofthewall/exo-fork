@@ -104,7 +104,11 @@ class MfluxBuilder(Builder):
     group: mx.distributed.Group | None = None
 
     def connect(self, bound_instance: BoundInstance) -> None:
-        self.group = initialize_mlx(bound_instance)
+        group = initialize_mlx(bound_instance)
+        assert isinstance(group, mx.distributed.Group), (
+            "image models require an mx.distributed group"
+        )
+        self.group = group
 
     def load(self, bound_instance: BoundInstance) -> Generator[ModelLoadingResponse]:
         self.shard_metadata = bound_instance.bound_shard

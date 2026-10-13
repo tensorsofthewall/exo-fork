@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 import mlx.core as mx
 
 from exo.worker.engines.mlx.auto_parallel import (
@@ -32,6 +34,10 @@ class RecordingComm:
     def all_gather(self, array: mx.array) -> mx.array:
         self.calls.append(("all_gather", -1))
         return mx.concatenate([array] * self._size, axis=0)
+
+    def flush_sends(self, sends: Sequence[tuple[mx.array, int]]) -> None:
+        for array, dst in sends:
+            self.send(array, dst)
 
     def barrier(self) -> None:
         self.calls.append(("barrier", -1))
