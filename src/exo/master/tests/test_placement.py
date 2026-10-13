@@ -50,6 +50,7 @@ from exo.shared.types.worker.instances import (
     InstanceMeta,
     MlxJacclInstance,
     MlxRingInstance,
+    MlxTbcclInstance,
 )
 from exo.shared.types.worker.runners import (
     RunnerConnecting,
@@ -1421,3 +1422,164 @@ def test_which_runners_hold_memory_they_have_not_taken_yet() -> None:
         RunnerShuttingDown(),
     ):
         assert free_gb(status) == 10.0, status
+
+
+def _two_node_topology(ip_a: int = 1, ip_b: int = 2):
+    topology = Topology()
+    node_a, node_b = NodeId(), NodeId()
+    topology.add_node(node_a)
+    topology.add_node(node_b)
+    # a reaches b at ip_b, b reaches a at ip_a
+    topology.add_connection(
+        Connection(source=node_a, sink=node_b, edge=create_socket_connection(ip_b))
+    )
+    topology.add_connection(
+        Connection(source=node_b, sink=node_a, edge=create_socket_connection(ip_a))
+    )
+    node_memory = {n: create_node_memory(1000 * 1024) for n in (node_a, node_b)}
+    node_network = {n: create_node_network() for n in (node_a, node_b)}
+    return topology, node_a, node_b, node_memory, node_network
+
+
+def _tbccl_command(model_card: ModelCard, sharding: Sharding) -> PlaceInstance:
+    return PlaceInstance(
+        sharding=sharding,
+        instance_meta=InstanceMeta.MlxTbccl,
+        command_id=CommandId(),
+        model_card=model_card.model_copy(
+            update={
+                "backends": [Backend.MlxMetal, Backend.MlxCuda],
+                "storage_size": Memory.from_kb(1500),
+            }
+        ),
+        min_nodes=2,
+    )
+
+
+def test_place_mlx_tbccl_pipeline_reuses_shard_assignments_and_exo_addresses(
+    model_card: ModelCard, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr("exo.master.placement.tbccl_available", lambda: (True, ""))
+    topology, a, b, node_memory, node_network = _two_node_topology()
+    backends = {a: [Backend.MlxMetal], b: [Backend.MlxCuda]}
+    tbccl = place_instance(
+        _tbccl_command(model_card, Sharding.Pipeline),
+        topology,
+        {},
+        node_memory,
+        node_network,
+        backends,
+    )
+    ring = place_instance(
+        _tbccl_command(model_card, Sharding.Pipeline).model_copy(
+            update={"instance_meta": InstanceMeta.MlxRing}
+        ),
+        topology,
+        {},
+        node_memory,
+        node_network,
+        backends,
+    )
+    (t_inst,) = tbccl.values()
+    (r_inst,) = ring.values()
+    assert isinstance(t_inst, MlxTbcclInstance)
+
+    # same layer allocation as the ring runtime: the placement policy is untouched
+    def layout(inst: Instance) -> list[tuple[int, int, int, int]]:
+        return sorted(
+            (s.device_rank, s.start_layer, s.end_layer, s.world_size)
+            for s in inst.shard_assignments.runner_to_shard.values()
+        )
+
+    assert layout(t_inst) == layout(r_inst)
+    assert t_inst.hosts_by_node == {
+        a: "169.254.0.1",
+        b: "169.254.0.2",
+    }
+
+
+def test_place_mlx_tbccl_rejects_tensor_sharding(
+    model_card: ModelCard, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr("exo.master.placement.tbccl_available", lambda: (True, ""))
+    topology, a, b, node_memory, node_network = _two_node_topology()
+    with pytest.raises(ValueError, match="only Pipeline"):
+        place_instance(
+            _tbccl_command(model_card, Sharding.Tensor),
+            topology,
+            {},
+            node_memory,
+            node_network,
+            {a: [Backend.MlxMetal], b: [Backend.MlxCuda]},
+        )
+
+
+def test_place_mlx_tbccl_rejects_image_models(
+    model_card: ModelCard, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr("exo.master.placement.tbccl_available", lambda: (True, ""))
+    topology, a, b, node_memory, node_network = _two_node_topology()
+    image_card = model_card.model_copy(update={"tasks": [ModelTask.TextToImage]})
+    with pytest.raises(ValueError, match="image or CFG"):
+        place_instance(
+            _tbccl_command(image_card, Sharding.Pipeline),
+            topology,
+            {},
+            node_memory,
+            node_network,
+            {a: [Backend.MlxMetal], b: [Backend.MlxCuda]},
+        )
+
+
+def test_place_mlx_tbccl_without_the_optional_package_is_a_clear_error(
+    model_card: ModelCard, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(
+        "exo.master.placement.tbccl_available",
+        lambda: (False, "exo_tbccl is not installed"),
+    )
+    topology, a, b, node_memory, node_network = _two_node_topology()
+    with pytest.raises(ValueError, match="optional exo-tbccl package"):
+        place_instance(
+            _tbccl_command(model_card, Sharding.Pipeline),
+            topology,
+            {},
+            node_memory,
+            node_network,
+            {a: [Backend.MlxMetal], b: [Backend.MlxCuda]},
+        )
+
+
+def test_place_mlx_tbccl_rejects_per_peer_addresses(
+    model_card: ModelCard, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr("exo.master.placement.tbccl_available", lambda: (True, ""))
+    topology, node_a, node_b, node_memory, node_network = _two_node_topology()
+    node_c = NodeId()
+    topology.add_node(node_c)
+    # c is reached at different addresses by a and b: one advertised endpoint per rank cannot serve both
+    for src, ip in ((node_a, 5), (node_b, 6)):
+        topology.add_connection(
+            Connection(source=src, sink=node_c, edge=create_socket_connection(ip))
+        )
+    for sink in (node_a, node_b):
+        topology.add_connection(
+            Connection(source=node_c, sink=sink, edge=create_socket_connection(1))
+        )
+    topology.add_connection(
+        Connection(source=node_a, sink=node_b, edge=create_socket_connection(2))
+    )
+    node_memory[node_c] = create_node_memory(1000 * 1024)
+    node_network[node_c] = create_node_network()
+    cmd = _tbccl_command(model_card, Sharding.Pipeline).model_copy(
+        update={"min_nodes": 3}
+    )
+    with pytest.raises(ValueError, match="one address per node"):
+        place_instance(
+            cmd,
+            topology,
+            {},
+            node_memory,
+            node_network,
+            {n: [Backend.MlxMetal] for n in (node_a, node_b, node_c)},
+        )

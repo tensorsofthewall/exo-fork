@@ -428,6 +428,40 @@ def get_mlx_ring_hosts_by_node(
     return hosts_by_node
 
 
+def get_mlx_tbccl_hosts_by_node(
+    selected_cycle: Cycle,
+    cycle_digraph: Topology,
+    node_network: Mapping[NodeId, NodeNetworkInfo],
+) -> dict[NodeId, str]:
+    """One address per node that every other node in the cycle uses to reach it.
+
+    exo owns the network choice (thunderbolt is preferred, as for the ring backend). TBCCL advertises a single endpoint per rank, so a
+    topology that needs different addresses for different peers is rejected rather than guessed at.
+    """
+    nodes = list(selected_cycle)
+    hosts: dict[NodeId, str] = {}
+    for node in nodes:
+        chosen: set[str] = set()
+        for other in nodes:
+            if other == node:
+                continue
+            ip = find_ip_prioritised(
+                other, node, cycle_digraph, node_network, ring=True
+            )
+            if ip is None:
+                raise ValueError(
+                    "MlxTbccl requires every node to be reachable from every other node in the cycle"
+                )
+            chosen.add(ip)
+        if len(chosen) != 1:
+            raise ValueError(
+                "MlxTbccl needs one address per node reachable from all peers; this topology would need "
+                f"different addresses per peer ({sorted(chosen)})"
+            )
+        hosts[node] = next(iter(chosen))
+    return hosts
+
+
 def get_mlx_jaccl_coordinators(
     coordinator: NodeId,
     coordinator_port: int,

@@ -15,6 +15,7 @@ class InstanceId(Id):
 class InstanceMeta(str, Enum):
     MlxRing = "MlxRing"
     MlxJaccl = "MlxJaccl"
+    MlxTbccl = "MlxTbccl"
 
 
 class BaseInstance(TaggedModel):
@@ -35,8 +36,18 @@ class MlxJacclInstance(BaseInstance):
     jaccl_coordinators: dict[NodeId, str]
 
 
+class MlxTbcclInstance(BaseInstance):
+    """Pipeline-parallel text generation over the optional exo-tbccl package (TBCCL as the activation data plane).
+
+    ``hosts_by_node`` carries exo's chosen address per node: the single address every other node in the cycle uses to reach it (TBCCL
+    advertises one endpoint per rank). No live TBCCL state is stored here.
+    """
+
+    hosts_by_node: dict[NodeId, str]
+
+
 # TODO: Single node instance
-Instance = MlxRingInstance | MlxJacclInstance
+Instance = MlxRingInstance | MlxJacclInstance | MlxTbcclInstance
 
 
 class BoundInstance(FrozenModel):
