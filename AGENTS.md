@@ -97,6 +97,24 @@ The system uses event sourcing for state management:
   - `tasks.py`: Task types for worker execution
   - `state.py`: Cluster state model
 
+### MlxTbccl: optional pipeline runtime over TBCCL (local, experimental)
+`InstanceMeta.MlxTbccl` moves pipeline-stage activations through the separate `exo-tbccl` package (TBCCL's C ABI) instead of `mx.distributed`; see `docs/mlx-tbccl.md`.
+- **Scope:** Pipeline sharding and text models only. Tensor parallelism and image/CFG models are rejected at placement and stay on `mx.distributed.Group`. exo must run without the package;
+  `exo.shared.tbccl_support.tbccl_available()` gates placement.
+- **Seams:** `exo/worker/engines/mlx/pipeline_comm.py` (`PipelineComm`, `MlxPipelineComm`, `CommGroup`, `comm_all_gather`, `release_comm`); `tbccl_comm.py` builds the communicator from the instance;
+  `exo/worker/runner/byte_exchange.py` + `worker/runner_bytes_hub.py` + topic `RUNNER_BYTES` are a generic all-gather of opaque bytes between the runners of an instance (bootstrap data).
+  Runner-level agreements (`mx_barrier`, `mx_any`, `mx_all_gather_tasks`, KV-cache pressure) must go through `CommGroup` helpers, not `mx.distributed` directly.
+- **Worker is constructed in TWO places in `main.py`** (startup and after a master election); both must pass the `runner_bytes_*` channels (they are required arguments for that reason).
+- **Placement/shards are never modified for TBCCL:** reuse `PipelineShardMetadata`; one address per node that every peer reaches; per-peer addresses are rejected.
+- **Tests:** `test_pipeline_comm.py`, `test_byte_exchange.py`, `test_placement.py` run in the default suite. `test_tbccl_pipeline.py` (+ `tbccl_pipeline_driver.py`) is `slow`, spawns ranks, and skips without `exo-tbccl`.
+  Compare outputs bit for bit, hash every stage boundary, and never fork a process that imported MLX (use spawn).
+- **Running tests locally:** `uv run --no-sync` (a plain `uv run` may drop extras), `EXO_DASHBOARD_DIR=<empty dir>` (no npm needed), `EXO_OFFLINE=true HF_HUB_OFFLINE=1` (exo's test suite otherwise downloads tokenizer
+  files), run `--ignore=src/exo/download` and `src/exo/download` separately (module-name clash), `-m slow` for the slow tests. Baseline: one pre-existing failure, `rust/exo_rs/tests/test_python.py`.
+- **Two-node experiments** use an isolated `EXO_HOME=<dir under $HOME>` (also isolates models and custom cards), `--offline --namespace <unique>`, and macOS nodes inside a live ssh session. Custom model cards are
+  reconciled away by the cluster state, and offline mode needs a `model.safetensors.index.json`; use a model whose card exists, with local files. Never download weights.
+- **Gotchas:** MLX ring init has no timeout (aborting a run mid-connect can wedge a Worker until its runner process is killed); SIGTERM may not stop an exo node (use the pid with `kill -9` as a last resort).
+- Local commits only; do not push without explicit approval; no AI attribution lines in commit messages for this work.
+
 ### Rust Components
 Rust code in `rust/` provides:
 - `networking`: zenoh networking (gossipsub, peer discovery)
