@@ -39,6 +39,9 @@ class RecordingComm:
         for array, dst in sends:
             self.send(array, dst)
 
+    def step_complete(self) -> None:
+        self.calls.append(("step_complete", -1))
+
     def barrier(self) -> None:
         self.calls.append(("barrier", -1))
 
@@ -68,8 +71,9 @@ def test_layers_use_the_comm_for_recv_send_all_gather() -> None:
     first = PipelineFirstLayer(Identity(), r=1, group=comm)
     last = PipelineLastLayer(Identity(), r=1, s=3, group=comm)
     out = last(first(mx.zeros((1, 2))))
-    assert [c[0] for c in comm.calls] == ["recv_like", "send", "all_gather"]
-    assert comm.calls[0][1] == 0 and comm.calls[1][1] == 2
+    assert [c[0] for c in comm.calls] == ["recv_like", "step_complete", "send", "all_gather"]
+    # the received activation is released after the stage output is evaluated and before anything is sent
+    assert comm.calls[0][1] == 0 and comm.calls[2][1] == 2
     assert out.shape == (1, 2)
 
 
@@ -79,10 +83,10 @@ def test_queued_sends_are_unsubmitted_until_flush_and_clearable() -> None:
     last.queue_sends = True
     last.is_prefill = True
     last(mx.ones((1, 2)))
-    assert comm.calls == []
+    assert comm.calls == [("step_complete", -1)]
     clear_prefill_sends()
     flush_prefill_sends()
-    assert comm.calls == []
+    assert comm.calls == [("step_complete", -1)]
     last(mx.ones((1, 2)))
     flush_prefill_sends()
-    assert comm.calls == [("send", 1)]
+    assert comm.calls == [("step_complete", -1), ("step_complete", -1), ("send", 1)]

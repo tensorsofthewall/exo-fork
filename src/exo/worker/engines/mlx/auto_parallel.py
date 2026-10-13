@@ -173,6 +173,8 @@ class PipelineLastLayer(CustomMlxLayer):
         # Eval layer output to materialize it before send — this splits the graph
         # so the send is isolated and the receiving rank's recv can complete.
         mx.eval(output)
+        # Everything computed from this step's received activation has now been evaluated.
+        self.comm.step_complete()
 
         if self.r != self.s - 1:
             if self.queue_sends:
