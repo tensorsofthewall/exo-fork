@@ -91,6 +91,8 @@ class Worker:
         command_sender: Sender[ForwarderCommand],
         download_command_sender: Sender[ForwarderDownloadCommand],
         api_port: int,
+        # The generic runner byte exchange (used by MlxTbccl). Without them a runner that asks for an exchange
+        # fails with a bounded RunnerByteExchangeError, so Worker callers that never place MlxTbccl need not pass them.
         runner_bytes_sender: Sender[RunnerBytesMessage] | None = None,
         runner_bytes_receiver: Receiver[RunnerBytesMessage] | None = None,
     ):
@@ -573,9 +575,9 @@ class Worker:
             event_sender=self.event_sender.clone(),
             bytes_hub=self.runner_bytes_hub,
             bytes_publisher=(
-                self.runner_bytes_sender.clone()
-                if self.runner_bytes_sender is not None
-                else None
+                None
+                if self.runner_bytes_sender is None
+                else self.runner_bytes_sender.clone()
             ),
         )
         self.runners[task.bound_instance.bound_runner_id] = runner
