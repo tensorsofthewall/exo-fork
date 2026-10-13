@@ -101,7 +101,7 @@ The system uses event sourcing for state management:
 `InstanceMeta.MlxTbccl` moves pipeline-stage activations through the separate `exo-tbccl` package (TBCCL's C ABI) instead of `mx.distributed`; see `docs/mlx-tbccl.md`.
 - **Scope:** Pipeline sharding and text models only. Tensor parallelism and image/CFG models are rejected at placement and stay on `mx.distributed.Group`. exo must run without the package;
   `exo.shared.tbccl_support.tbccl_available()` gates placement.
-- **Seams:** `exo/worker/engines/mlx/pipeline_comm.py` (`PipelineComm`, `MlxPipelineComm`, `CommGroup`, `comm_all_gather`, `release_comm`); `tbccl_comm.py` builds the communicator from the instance;
+- **Seams:** `exo/worker/engines/mlx/pipeline_comm.py` (`PipelineComm`, `MlxPipelineComm`, `CommGroup`, `comm_all_gather`, `release_comm`; `step_complete()` is the lifetime hook `PipelineLastLayer` calls right after the stage output is evaluated, a no-op for `MlxPipelineComm`); `tbccl_comm.py` builds the communicator from the instance;
   `exo/worker/runner/byte_exchange.py` + `worker/runner_bytes_hub.py` + topic `RUNNER_BYTES` are a generic all-gather of opaque bytes between the runners of an instance (bootstrap data).
   Runner-level agreements (`mx_barrier`, `mx_any`, `mx_all_gather_tasks`, KV-cache pressure) must go through `CommGroup` helpers, not `mx.distributed` directly.
 - **Worker is constructed in TWO places in `main.py`** (startup and after a master election); both must pass the `runner_bytes_*` channels (they are required arguments for that reason).
