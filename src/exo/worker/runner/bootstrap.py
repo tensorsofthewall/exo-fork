@@ -7,6 +7,7 @@ from typing import Self, cast
 import loguru
 
 from exo.shared.types.events import Event
+from exo.shared.types.runner_bytes import RunnerBytesMessage
 from exo.shared.types.tasks import Task, TaskId
 from exo.shared.types.worker.instances import (
     BoundInstance,
@@ -63,6 +64,8 @@ def entrypoint(
     task_receiver: MpReceiver[Task],
     cancel_receiver: MpReceiver[TaskId],
     _logger: "loguru.Logger",
+    bytes_out: MpSender[RunnerBytesMessage] | None = None,
+    bytes_in: MpReceiver[RunnerBytesMessage] | None = None,
 ) -> None:
     global logger
     logger = _logger
@@ -102,6 +105,18 @@ def entrypoint(
                 model_id=bound_instance.bound_shard.model_card.model_id,
                 event_sender=event_sender_downcast,
                 cancel_receiver=cancel_receiver,
+            )
+
+        if bytes_out is not None and bytes_in is not None:
+            from exo.worker.runner.byte_exchange import RunnerByteExchange
+
+            shard = bound_instance.bound_shard
+            builder.byte_exchange = RunnerByteExchange(
+                bound_instance.instance.instance_id,
+                shard.device_rank,
+                shard.world_size,
+                bytes_out,
+                bytes_in,
             )
 
         runner = Runner(bound_instance, builder, event_sender_downcast, task_receiver)

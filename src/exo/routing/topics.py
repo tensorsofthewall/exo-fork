@@ -9,6 +9,7 @@ from exo.shared.types.events import (
     LocalForwarderEvent,
     StateSnapshot,
 )
+from exo.shared.types.runner_bytes import RunnerBytesMessage
 from exo.utils.pydantic_ext import FrozenModel
 
 
@@ -54,3 +55,4 @@ CONNECTION_MESSAGES = TypedTopic(
 DOWNLOAD_COMMANDS = TypedTopic(
     "download_commands", PublishPolicy.Always, ForwarderDownloadCommand
 )
+RUNNER_BYTES = TypedTopic("runner_bytes", PublishPolicy.Always, RunnerBytesMessage)
