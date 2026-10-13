@@ -235,7 +235,13 @@ def test_inbox_keeps_being_drained_after_the_exchange_completes():
     in_s, in_r = mp_channel[RunnerBytesMessage]()
     ex = RunnerByteExchange(inst, 0, 2, out_s, in_r)
     try:
-        late = RunnerBytesMessage(instance_id=inst, namespace="ns", rank=1, world_size=2, payload_b64="A" * 6000)
+        late = RunnerBytesMessage(
+            instance_id=inst,
+            namespace="ns",
+            rank=1,
+            world_size=2,
+            payload_b64="A" * 6000,
+        )
         in_s.send(late)
         got = ex.all_gather("ns", b"zero", timeout_s=5)
         assert got[0] == b"zero" and len(got[1]) == 4500

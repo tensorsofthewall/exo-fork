@@ -71,7 +71,12 @@ def test_layers_use_the_comm_for_recv_send_all_gather() -> None:
     first = PipelineFirstLayer(Identity(), r=1, group=comm)
     last = PipelineLastLayer(Identity(), r=1, s=3, group=comm)
     out = last(first(mx.zeros((1, 2))))
-    assert [c[0] for c in comm.calls] == ["recv_like", "step_complete", "send", "all_gather"]
+    assert [c[0] for c in comm.calls] == [
+        "recv_like",
+        "step_complete",
+        "send",
+        "all_gather",
+    ]
     # the received activation is released after the stage output is evaluated and before anything is sent
     assert comm.calls[0][1] == 0 and comm.calls[2][1] == 2
     assert out.shape == (1, 2)
