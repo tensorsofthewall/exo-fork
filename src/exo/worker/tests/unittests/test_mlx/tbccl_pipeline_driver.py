@@ -195,11 +195,18 @@ def _run_model(
     # decode-style: not prefill -> every rank takes part in the final all_gather and keeps the last rank's rows
     set_pipeline_prefill(model, is_prefill=False)
     decode_ok: list[bool] = []
+    diffs: list[float] = []
     for x, ref in zip(xs, refs, strict=True):
         out = model(x)
         mx.eval(out)
         decode_ok.append(_digest(out) == _digest(ref))
+        diffs.append(
+            float(
+                mx.max(mx.abs(out.astype(mx.float32) - ref.astype(mx.float32))).item()
+            )
+        )
     result["decode_matches_unsharded"] = all(decode_ok)
+    result["decode_max_abs_diff"] = max(diffs)  # nonzero only across different devices
 
     # prefill-style: queued sends flushed after each chunk; the last rank holds the real output
     set_pipeline_prefill(model, is_prefill=True)
@@ -392,12 +399,83 @@ def run_ring_world(world: int, dtype_name: str) -> list[dict[str, Any]]:
         os.unlink(hostfile)
 
 
+class _FileExchange:
+    """Cross-host variant: the operator (or a sync loop) copies `<purpose>.<rank>` files between hosts."""
+
+    def __init__(self, directory: str, rank: int, world: int, timeout_s: float = 90):
+        import pathlib
+
+        self.dir, self.rank, self.world, self.timeout_s = (
+            pathlib.Path(directory),
+            rank,
+            world,
+            timeout_s,
+        )
+
+    def __call__(self, purpose: str, payload: bytes) -> list[bytes]:
+        tmp = self.dir / f".{purpose}.{self.rank}.tmp"
+        tmp.write_bytes(payload)
+        tmp.replace(self.dir / f"{purpose}.{self.rank}")
+        out: list[bytes] = []
+        deadline = time.time() + self.timeout_s
+        for r in range(self.world):
+            f = self.dir / f"{purpose}.{r}"
+            while not (f.exists() and f.stat().st_size == len(payload)):
+                if time.time() > deadline:
+                    raise TimeoutError(f"no {purpose} from rank {r}")
+                time.sleep(0.1)
+            out.append(f.read_bytes())
+        return out
+
+
+def run_one_host_rank(
+    rank: int, world: int, host: str, directory: str, dtype_name: str
+) -> dict[str, Any]:
+    """One rank of a real multi-host run: bootstraps TbcclPipelineComm directly (blobs via files) and runs the same checks."""
+    from exo_tbccl.group import TbcclPipelineComm
+
+    inner = TbcclPipelineComm.create(
+        rank,
+        world,
+        _FileExchange(directory, rank, world),
+        bind_host=host,
+        advertise_host=host,
+        timeout_ms=90000,
+    )
+    comm = RecordingComm(inner)
+    try:
+        res = _run_model(comm, rank, world, dtype_name)
+        _FileExchange(directory, rank, world)("quiesce", b"x")
+    finally:
+        comm.close()
+    res["device"] = str(mx.default_device())
+    res["stats"] = {
+        "direct_ops": inner.stats.direct_ops,
+        "materialized_copies": inner.stats.materialized_copies,
+        "staged_fallback_copies": inner.stats.staged_fallback_copies,
+    }
+    return res
+
+
 def main() -> None:
     import sys
 
     mp.set_start_method(
         "spawn"
     )  # MLX/CUDA must not be forked from a process that imported it; mp_channel follows the default context
+    if sys.argv[1] == "host":
+        rank, world, host, directory, dtype_name = (
+            int(sys.argv[2]),
+            int(sys.argv[3]),
+            sys.argv[4],
+            sys.argv[5],
+            sys.argv[6],
+        )
+        print(
+            "RESULT "
+            + json.dumps(run_one_host_rank(rank, world, host, directory, dtype_name))
+        )
+        return
     backend, world, dtype_name = sys.argv[1], int(sys.argv[2]), sys.argv[3]
     run = run_tbccl_world if backend == "tbccl" else run_ring_world
     print("RESULT " + json.dumps(run(world, dtype_name)))
