@@ -134,7 +134,7 @@ def check(report):
     uv = shutil.which("uv")
     report.ok("uv", first_line(run([uv, "--version"]))) if uv else report.need(
         "uv",
-        "install uv: https://docs.astral.sh/uv/ (uv also provides CPython 3.13 on demand)",
+        "install uv (https://docs.astral.sh/uv/; it also provides CPython 3.13 on demand) or add its directory to PATH (non-interactive ssh shells often lack it)",
     )
     report.ok("git", first_line(run(["git", "--version"]))) if shutil.which(
         "git"
