@@ -70,6 +70,30 @@ class TbcclExtra(unittest.TestCase):
         self.assertIn("tbccl", exo["metadata"]["provides-extras"])
         self.assertEqual(len(exo["optional-dependencies"]["tbccl"]), 2)
 
+    def test_extra_resolves_to_one_wheel_or_nothing_per_platform(self):
+        try:
+            from packaging.markers import Marker
+        except ImportError:
+            self.skipTest("packaging is not installed")
+        requirement = PYPROJECT["project"]["optional-dependencies"]["tbccl"][0]
+        gate = Marker(requirement.split(";", 1)[1].strip())
+        sources = PYPROJECT["tool"]["uv"]["sources"]["exo-tbccl"]
+        expected = {
+            ("linux", "x86_64"): "manylinux",
+            ("linux", "aarch64"): None,
+            ("darwin", "arm64"): "macosx_14_0_arm64",
+            ("darwin", "x86_64"): None,
+        }
+        for (system, machine), wheel in expected.items():
+            env = {"sys_platform": system, "platform_machine": machine}
+            picked = [s["url"] for s in sources if Marker(s["marker"]).evaluate(env)]
+            if wheel is None:
+                self.assertFalse(gate.evaluate(env), (system, machine))
+            else:
+                self.assertTrue(gate.evaluate(env), (system, machine))
+                self.assertEqual(len(picked), 1, (system, machine))
+                self.assertIn(wheel, picked[0])
+
     def test_mlx_and_torch_pins_are_untouched(self):
         extras = PYPROJECT["project"]["optional-dependencies"]
         self.assertIn(
