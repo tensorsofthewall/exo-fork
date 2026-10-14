@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# pyright: basic
 """Report how far this maintained fork has drifted from its upstream, and whether the drift touches the TBCCL integration. Read-only: it never merges, rebases or moves a tag.
 
     check_upstream_drift.py --upstream-url https://github.com/exo-explore/exo.git --upstream-branch main \\

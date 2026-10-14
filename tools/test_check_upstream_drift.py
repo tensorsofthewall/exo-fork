@@ -1,17 +1,15 @@
+# pyright: basic
 """Tests of check_upstream_drift.py on throwaway git repositories (no network). Run: python3 -m unittest tools/test_check_upstream_drift.py"""
 
-import importlib.util
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-spec = importlib.util.spec_from_file_location(
-    "drift", Path(__file__).with_name("check_upstream_drift.py")
-)
-drift = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(drift)
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import check_upstream_drift as drift
 
 ENV = {
     **os.environ,
