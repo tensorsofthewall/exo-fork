@@ -1,0 +1,38 @@
+name: upstream-drift
+
+# A weekly monitor, not a sync: it compares this fork's main with its upstream and reports how far they have drifted and whether the upstream changes touch the
+# files of the TBCCL integration (derived from the pinned integration tag), which answers how much work the next compatibility sync will be. It never merges,
+# rebases, moves a tag or changes a pin, it needs no write permission, and an upstream that moved is reported as DRIFT, not as a failure.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "7 6 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-drift
+  cancel-in-progress: false
+
+jobs:
+  drift:
+    name: upstream drift
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Compare with upstream
+        run: |
+          set +e
+          python3 tools/check_upstream_drift.py --name "$GITHUB_REPOSITORY" \
+            --upstream-url https://github.com/exo-explore/exo.git --upstream-branch main \
+            --base 75d8ad2bc1eac25aaf7adb39c0784ad0def8c1b6 --tag tbccl-integration-v1
+          rc=$?
+          case $rc in
+            0) echo "no drift" ;;
+            5) echo "DRIFT: upstream moved (see the summary); nothing was changed" ;;
+            *) echo "ERROR: the drift monitor itself failed (exit $rc)"; exit 1 ;;
+          esac
