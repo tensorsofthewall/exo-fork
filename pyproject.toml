@@ -70,6 +70,11 @@ mlx-cuda13 = [
   "mlx-cuda-13==0.32.0; sys_platform == 'linux'",
   "nvidia-ml-py>=13.595.45",
 ]
+# Optional TBCCL pipeline transport (https://github.com/tensorsofthewall/exo-tbccl). Binary wheels exist for Linux x86-64 and macOS arm64 only (CPython 3.13);
+# the marker keeps the extra empty, instead of failing resolution, on any other platform. Combine it with an mlx extra: `--extra mlx-cuda13 --extra tbccl`.
+tbccl = [
+  "exo-tbccl==0.3.0; (sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'darwin' and platform_machine == 'arm64')",
+]
 
 ###
 # workspace configuration
@@ -92,6 +97,10 @@ mlx-cuda-12 = [
 mlx-cuda-13 = [
   { url = "https://github.com/rltakashige/mlx-jaccl-fix-small-recv/releases/download/mlx_cuda/mlx_cuda_13-0.32.0-py3-none-manylinux_2_35_aarch64.whl", marker = "sys_platform == 'linux' and platform_machine == 'aarch64'" },
   { url = "https://github.com/rltakashige/mlx-jaccl-fix-small-recv/releases/download/mlx_cuda/mlx_cuda_13-0.32.0-py3-none-manylinux_2_35_x86_64.whl", marker = "sys_platform == 'linux' and platform_machine != 'aarch64'" },
+]
+exo-tbccl = [
+  { url = "https://github.com/tensorsofthewall/exo-tbccl/releases/download/v0.3.0/exo_tbccl-0.3.0-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
+  { url = "https://github.com/tensorsofthewall/exo-tbccl/releases/download/v0.3.0/exo_tbccl-0.3.0-cp313-cp313-macosx_14_0_arm64.whl", marker = "sys_platform == 'darwin' and platform_machine == 'arm64'" },
 ]
 mlx-lm = { git = "https://github.com/rltakashige/mlx-lm", branch = "leo/deepseek-v4" }
 mflux = { git = "https://github.com/evanev7/mflux", branch = "exo2" }
