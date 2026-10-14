@@ -1,5 +1,6 @@
 import threading
 import time
+from typing import cast
 
 import pytest
 
@@ -226,6 +227,25 @@ def test_hub_buffers_messages_for_a_runner_that_does_not_exist_yet_and_is_bounde
     )
 
 
+class CountingReceiver:
+    """Delegates to the real inbox and counts the messages the exchange itself consumed through it."""
+
+    def __init__(self, inner: MpReceiver[RunnerBytesMessage]):
+        self.inner = inner
+        self.consumed = 0
+        self._lock = threading.Lock()
+
+    def receive_nowait(self) -> RunnerBytesMessage:
+        msg = self.inner.receive_nowait()
+        with self._lock:
+            self.consumed += 1
+        return msg
+
+    def count(self) -> int:
+        with self._lock:
+            return self.consumed
+
+
 def test_inbox_keeps_being_drained_after_the_exchange_completes():
     """Phase 68 (real exo + TBCCL run): after the bootstrap exchange a peer keeps republishing its (several KB) endpoint blob for its own linger period. If the
     runner stops reading its inbox the OS pipe fills, the mp.Queue feeder thread in the Worker blocks, and the exo process then hangs at interpreter exit
@@ -233,7 +253,15 @@ def test_inbox_keeps_being_drained_after_the_exchange_completes():
     inst = InstanceId()
     out_s, out_r = mp_channel[RunnerBytesMessage]()
     in_s, in_r = mp_channel[RunnerBytesMessage]()
-    ex = RunnerByteExchange(inst, 0, 2, out_s, in_r)
+    inbox = CountingReceiver(in_r)
+    # the exchange only calls receive_nowait(), which the counting receiver provides
+    ex = RunnerByteExchange(
+        inst,
+        0,
+        2,
+        out_s,
+        cast(MpReceiver[RunnerBytesMessage], cast(object, inbox)),
+    )
     try:
         late = RunnerBytesMessage(
             instance_id=inst,
@@ -245,9 +273,19 @@ def test_inbox_keeps_being_drained_after_the_exchange_completes():
         in_s.send(late)
         got = ex.all_gather("ns", b"zero", timeout_s=5)
         assert got[0] == b"zero" and len(got[1]) == 4500
-        for _ in range(60):  # ~360 KB, far beyond a 64 KB pipe
+        baseline = inbox.count()
+        late_count = 60
+        for _ in range(late_count):  # ~360 KB, far beyond a 64 KB pipe
             in_s.send(late)
-        time.sleep(3.5)  # the linger loop wakes every RESEND_INTERVAL_S * 2 = 1 s
+        # The messages travel through the sender's mp.Queue feeder and an OS pipe, so wait until the exchange's own linger loop has consumed all of them
+        # (counted on the receiver it holds) instead of guessing how long that takes.
+        deadline = time.monotonic() + 15.0
+        while inbox.count() < baseline + late_count:
+            if time.monotonic() >= deadline:
+                pytest.fail(
+                    f"the linger loop consumed only {inbox.count() - baseline}/{late_count} late messages"
+                )
+            time.sleep(0.01)
         with pytest.raises(WouldBlock):
             in_r.receive_nowait()  # nothing is left in the queue: the exchange consumed the late messages itself
     finally:
