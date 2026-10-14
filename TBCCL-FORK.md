@@ -8,15 +8,44 @@ Use the immutable tag, never `main`:
 
 | Tag | Commit | Contents |
 |---|---|---|
-| `tbccl-integration-v1` | `1416807b46efd87c3601c69ce5784f51c9dd4c75` | upstream exo `75d8ad2bc1eac25aaf7adb39c0784ad0def8c1b6` (2026-10-12) plus 15 integration commits |
+| `tbccl-integration-v2` (current) | `d1497b28b89618172d273e70e9ac7992811635f5` | upstream exo `bc412e2230f395e652c23426a5eb88dfa515769b` (2026-10-13) plus the unchanged integration and the optional `tbccl` extra |
+| `tbccl-integration-v1` (legacy) | `1416807b46efd87c3601c69ce5784f51c9dd4c75` | upstream exo `75d8ad2bc1eac25aaf7adb39c0784ad0def8c1b6` (2026-10-12) plus 15 integration commits; no extra |
 
-exo-tbccl 0.3.0 is qualified against exactly this tag. The tag is never moved; a later integration gets a new tag (`tbccl-integration-v2`, ...) and a new exo-tbccl release. The current pairing is on the [TBCCL ecosystem page](https://tbccl.tensorsofthewall.com/en/latest/project/ecosystem.html).
+exo-tbccl 0.3.0 is the adapter version of both tags (the wheel did not change). Tags are never moved; a later integration gets a new tag. The current pairing is on the [TBCCL ecosystem page](https://tbccl.tensorsofthewall.com/en/latest/project/ecosystem.html).
 
 ## Installing the TBCCL-compatible fork
 
 Why the fork: upstream exo has no way to run a pipeline stage over TBCCL. The fork adds the `PipelineComm` seam, the `MlxTbccl` instance type and its placement, and the runner byte exchange; the transport itself is the separate [exo-tbccl](https://github.com/tensorsofthewall/exo-tbccl) package. Installing the fork does not change exo's default behaviour; without exo-tbccl, selecting `MlxTbccl` is a clear placement error.
 
-**Supported today: the tag `tbccl-integration-v1` plus the exo-tbccl 0.3.0 wheel**, installed into the tag's own uv environment on **every** node. Python 3.13, uv, node and Rust are needed as for any exo source install ([README](README.md#run-from-source-macos)).
+**Supported: the tag `tbccl-integration-v2` with the optional `tbccl` extra**, installed on **every** node. Python 3.13, uv, node and Rust are needed as for any exo source install ([README](README.md#run-from-source-macos)). The extra adds convenient installation through uv: `exo-tbccl==0.3.0` (platform-gated release-wheel sources for Linux x86-64 and macOS arm64, recorded with hashes in `uv.lock`). The adapter remains optional (exo works without it), the wheel contains the TBCCL runtime so no separate libtbccl is needed, and on any other platform the extra installs nothing. The tag's own README and this file at the tag predate the method; use the commands below.
+
+Linux x86-64 (CUDA 13):
+
+```bash
+git clone --depth 1 --branch tbccl-integration-v2 https://github.com/tensorsofthewall/exo-fork.git
+cd exo-fork && (cd dashboard && npm install && npm run build)
+uv sync --no-dev --locked --extra mlx-cuda13 --extra tbccl
+uv run --no-sync python -c "import exo_tbccl; print(exo_tbccl.__version__, exo_tbccl.is_available())"
+```
+
+macOS arm64 (Metal):
+
+```bash
+git clone --depth 1 --branch tbccl-integration-v2 https://github.com/tensorsofthewall/exo-fork.git
+cd exo-fork && (cd dashboard && npm install && npm run build)
+uv sync --no-dev --locked --extra mlx --extra tbccl
+uv run --no-sync python -c "import exo_tbccl; print(exo_tbccl.__version__, exo_tbccl.is_available())"
+```
+
+Expected output: `0.3.0 (True, '')`. A repeated sync keeps the adapter and leaves the MLX and PyTorch pins unchanged (verified with `--locked` on Linux x86-64 and macOS arm64). Then follow [docs/mlx-tbccl.md](docs/mlx-tbccl.md) and the [exo-tbccl guide](https://exo-tbccl.tensorsofthewall.com/en/latest/getting-started/install.html) to place an instance.
+
+On macOS the first `uv sync` builds MLX from its pinned git revision (needs Xcode and the Metal toolchain; several minutes), and the dashboard build needs node (`brew install node`), which `uv sync` itself does not. If the adapter is missing or the platform has none (wheels exist only for Linux x86-64 and macOS arm64), exo reports `exo_tbccl is not installed (...)`, and selecting `MlxTbccl` fails placement with `MlxTbccl requires the optional exo-tbccl package: <reason>`.
+
+**Qualification.** One two-rank `MlxTbccl` pipeline between an Apple Silicon M4 (Metal) host and an RTX 3070 Ti (CUDA) host over a Thunderbolt 4 IP link, `Qwen3-0.6B-8bit`, completed a short generation with no new AER errors or link instability during that session. It does not establish performance, scalability, recovery or other models.
+
+## Legacy: `tbccl-integration-v1` and a manual wheel
+
+The earlier immutable tag `tbccl-integration-v1` has no extra. It stays available and unchanged: the exo-tbccl 0.3.0 wheel is installed by hand into the tag's own uv environment on **every** node. Python 3.13, uv, node and Rust are needed as for any exo source install ([README](README.md#run-from-source-macos)).
 
 Linux x86-64 (CUDA 13):
 
@@ -40,16 +69,12 @@ uv pip install --python .venv/bin/python --no-deps https://github.com/tensorsoft
 
 Expected output: `0.3.0 (True, '')`. `--no-deps` keeps uv from touching exo's MLX and PyTorch pins (the wheel has no dependencies anyway). `uv sync` is an exact sync and removes the adapter; after the wheel is installed use `uv sync --inexact ...` (verified to keep it), or reinstall the wheel. Then follow [docs/mlx-tbccl.md](docs/mlx-tbccl.md) and the [exo-tbccl guide](https://exo-tbccl.tensorsofthewall.com/en/latest/getting-started/install.html) to place an instance.
 
-On macOS the first `uv sync` builds MLX from its pinned git revision (needs Xcode and the Metal toolchain; several minutes), and the dashboard build needs node (`brew install node`), which `uv sync` itself does not. If the adapter is missing or the platform has none (wheels exist only for Linux x86-64 and macOS arm64), exo reports `exo_tbccl is not installed (...)`, and selecting `MlxTbccl` fails placement with `MlxTbccl requires the optional exo-tbccl package: <reason>`.
-
 **Upstream versus fork:** the upstream instructions in the README install upstream exo (or this fork's `main`, which is a development line) and give no TBCCL pipeline. Use the tag above for TBCCL.
-
-**Preferred workflow once the next integration is released (not yet available).** The development branch declares an optional `tbccl` extra (`exo-tbccl==0.3.0`, with wheel sources for Linux x86-64 and macOS arm64 and no effect on other platforms), so that `uv sync --no-dev --extra mlx-cuda13 --extra tbccl` (Linux) or `uv sync --no-dev --extra mlx --extra tbccl` (macOS) installs the adapter together with exo and a repeated sync keeps it (verified on Linux x86-64 and macOS arm64 with `--locked`). It is exo-only: the adapter is not a dependency of exo. This is available only from a revision that carries the extra; the supported tag `tbccl-integration-v1` does not, and `tbccl-integration-v1` is never changed. A new integration tag will be created after the extra is qualified on both platforms.
 
 ## Provenance
 
 - `main` of this fork tracks upstream `main` plus the integration. It is a development line, not a supported install target, and is updated by merging upstream and re-validating the integration, never automatically.
 - `tools/check_upstream_drift.py` and the weekly `upstream-drift` workflow report how far `main` is behind upstream and which upstream changes touch the files the integration changed (derived from the diff between the upstream base and the integration tag). They only report; they merge nothing and move no tag.
-- To see exactly what the integration changes: `git diff 75d8ad2bc1eac25aaf7adb39c0784ad0def8c1b6 tbccl-integration-v1`.
+- To see exactly what the integration changes: `git diff bc412e2230f395e652c23426a5eb88dfa515769b tbccl-integration-v2` (v2) or `git diff 75d8ad2bc1eac25aaf7adb39c0784ad0def8c1b6 tbccl-integration-v1` (v1).
 
 Report problems with the integration in [exo-tbccl](https://github.com/tensorsofthewall/exo-tbccl/issues), not to upstream exo.
