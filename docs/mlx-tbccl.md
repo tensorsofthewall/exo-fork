@@ -16,9 +16,9 @@ thunderbolt interface is preferred, as for the ring backend).
 
 ## Requirements
 
-- An installed TBCCL 0.6.0 or newer (C ABI 1, wire protocol 4) on each node and the `exo-tbccl` package in exo's environment (`exo_tbccl.is_available()`); exo runs normally
-  without them and `MlxTbccl` placement then fails with a message saying what is missing. The package is built locally against the TBCCL install
-  (not on PyPI), so it is not an exo dependency.
+- The `exo-tbccl` package in exo's environment (`exo_tbccl.is_available()`); its wheel already contains TBCCL (C ABI 1, wire protocol 4), so nothing else is installed. See [TBCCL-FORK.md](../TBCCL-FORK.md). exo runs normally
+  without it and `MlxTbccl` placement then fails with a message saying what is missing. The package is published as GitHub release wheels (not on PyPI) and is
+  not a mandatory exo dependency; a development revision offers it as the optional `tbccl` extra.
 - Backends: MlxMetal, MlxCuda, MlxCpu (a Mac and a Linux/CUDA node can be mixed).
 
 ## Upstream base
