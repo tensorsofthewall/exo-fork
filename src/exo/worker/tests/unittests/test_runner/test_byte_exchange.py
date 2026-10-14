@@ -254,8 +254,13 @@ def test_inbox_keeps_being_drained_after_the_exchange_completes():
     out_s, out_r = mp_channel[RunnerBytesMessage]()
     in_s, in_r = mp_channel[RunnerBytesMessage]()
     inbox = CountingReceiver(in_r)
+    # the exchange only calls receive_nowait(), which the counting receiver provides
     ex = RunnerByteExchange(
-        inst, 0, 2, out_s, cast(MpReceiver[RunnerBytesMessage], inbox)
+        inst,
+        0,
+        2,
+        out_s,
+        cast(MpReceiver[RunnerBytesMessage], cast(object, inbox)),
     )
     try:
         late = RunnerBytesMessage(
