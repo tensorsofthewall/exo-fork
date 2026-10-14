@@ -41,6 +41,10 @@ Expected output: `0.3.0 (True, '')`. A repeated sync keeps the adapter and leave
 
 On macOS the first `uv sync` builds MLX from its pinned git revision (needs Xcode and the Metal toolchain; several minutes), and the dashboard build needs node (`brew install node`), which `uv sync` itself does not. If the adapter is missing or the platform has none (wheels exist only for Linux x86-64 and macOS arm64), exo reports `exo_tbccl is not installed (...)`, and selecting `MlxTbccl` fails placement with `MlxTbccl requires the optional exo-tbccl package: <reason>`.
 
+**Without the dashboard (HTTP API only).** `exo --help` and `--version` work without a built dashboard, but serving needs a dashboard directory. If you only need the API, you do not have to install Node: point `EXO_DASHBOARD_DIR` at any existing directory (relative to `$HOME`, or absolute) and start exo; the API answers on port 52415 and `/` returns 404. Verified on Linux x86-64 with the v2 code and an empty directory. Build the dashboard (`cd dashboard && npm install && npm run build`) when you want the web UI.
+
+**Checking a checkout.** On the development line (`main`, not inside the tagged v2 tree) `python3 tools/setup_tbccl.py check` reports, without changing anything, whether uv, git, Rust (and on macOS Xcode and the Metal toolchain) are present, which revision this is, whether the dashboard is built, and prints the exact `uv sync` command for the platform; `sync` runs that locked sync, and `doctor` prints the installed exo, adapter and TBCCL runtime versions, the MLX device, model directories, discovery namespace and whether the ports 52413-52415 are free. It never installs system packages or touches network settings. Future integration tags will contain it.
+
 **Qualification.** One two-rank `MlxTbccl` pipeline between an Apple Silicon M4 (Metal) host and an RTX 3070 Ti (CUDA) host over a Thunderbolt 4 IP link, `Qwen3-0.6B-8bit`, completed a short generation with no new AER errors or link instability during that session. It does not establish performance, scalability, recovery or other models.
 
 ## Legacy: `tbccl-integration-v1` and a manual wheel
