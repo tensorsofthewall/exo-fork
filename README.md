@@ -21,6 +21,23 @@ exo: Run frontier AI locally. Maintained by [exo labs](https://x.com/exolabs).
 
 exo connects all your devices into an AI cluster. Not only does exo enable running models larger than would fit on a single device, but with [day-0 support for RDMA over Thunderbolt](https://x.com/exolabs/status/2001817749744476256?s=20), makes models run faster as you add more devices.
 
+## Installing the TBCCL-compatible fork
+
+This repository is a maintained fork of upstream [exo](https://github.com/exo-explore/exo). The fork is required only to run exo pipelines over [TBCCL](https://github.com/tensorsofthewall/tbccl) (the `MlxTbccl` instance type, for example a Mac with Metal and a Linux host with CUDA in one pipeline); it adds the `PipelineComm` seam and a runner byte exchange that upstream exo does not have. For everything else use [upstream exo](https://github.com/exo-explore/exo); the upstream installation instructions below still apply to this repository when you do not need TBCCL.
+
+**Supported integration: the immutable tag `tbccl-integration-v1`** (commit `1416807b46efd87c3601c69ce5784f51c9dd4c75`, upstream exo `75d8ad2b` plus the integration), qualified with [exo-tbccl](https://github.com/tensorsofthewall/exo-tbccl) 0.3.0. Never install `main` for TBCCL use. Installing is exo's normal from-source flow on the tag, followed by the adapter wheel in the same environment (Python 3.13; prerequisites as in [Run from Source](#run-from-source-macos)):
+
+```bash
+git clone --branch tbccl-integration-v1 --depth 1 https://github.com/tensorsofthewall/exo-fork.git
+cd exo-fork && (cd dashboard && npm install && npm run build)
+uv sync --no-dev --extra mlx-cuda13        # Linux CUDA 13; on macOS use: uv sync --no-dev --extra mlx
+# Linux x86-64 wheel; on macOS use the macosx_14_0_arm64 wheel (see TBCCL-FORK.md)
+uv pip install --python .venv/bin/python --no-deps https://github.com/tensorsofthewall/exo-tbccl/releases/download/v0.3.0/exo_tbccl-0.3.0-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl
+.venv/bin/python -c "import exo_tbccl; print(exo_tbccl.__version__, exo_tbccl.is_available())"    # 0.3.0 (True, '')
+```
+
+A plain `uv sync` removes packages it did not install, including the adapter wheel; run later syncs as `uv sync --inexact ...` (or reinstall the wheel). Upcoming workflow: a future integration tag will declare `exo-tbccl` as an optional extra so that `uv sync --no-dev --extra mlx-cuda13 --extra tbccl` (Linux) or `--extra mlx --extra tbccl` (macOS) installs and keeps it; that extra is prepared on the development branch but is not part of the supported tag. Details, the macOS commands and verification: [TBCCL-FORK.md](TBCCL-FORK.md).
+
 ## Features
 
 - **Automatic Device Discovery**: Devices running exo automatically discover each other - no manual configuration.

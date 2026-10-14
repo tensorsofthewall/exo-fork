@@ -502,6 +502,10 @@ mlx-cuda13 = [
 mlx-none = [
     { name = "anyio", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
+tbccl = [
+    { name = "exo-tbccl", version = "0.3.0", source = { url = "https://github.com/tensorsofthewall/exo-tbccl/releases/download/v0.3.0/exo_tbccl-0.3.0-cp313-cp313-macosx_14_0_arm64.whl" }, marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine != 'arm64' and extra == 'extra-3-exo-mlx-cpu' and extra == 'extra-3-exo-mlx-cuda12') or (platform_machine != 'arm64' and extra == 'extra-3-exo-mlx-cpu' and extra == 'extra-3-exo-mlx-cuda13') or (platform_machine != 'arm64' and extra == 'extra-3-exo-mlx-cpu' and extra == 'extra-3-exo-mlx-none') or (platform_machine != 'arm64' and extra == 'extra-3-exo-mlx-cuda12' and extra == 'extra-3-exo-mlx-cuda13') or (platform_machine != 'arm64' and extra == 'extra-3-exo-mlx-cuda12' and extra == 'extra-3-exo-mlx-none') or (platform_machine != 'arm64' and extra == 'extra-3-exo-mlx-cuda13' and extra == 'extra-3-exo-mlx-none') or (sys_platform != 'darwin' and extra == 'extra-3-exo-mlx-cpu' and extra == 'extra-3-exo-mlx-cuda12') or (sys_platform != 'darwin' and extra == 'extra-3-exo-mlx-cpu' and extra == 'extra-3-exo-mlx-cuda13') or (sys_platform != 'darwin' and extra == 'extra-3-exo-mlx-cpu' and extra == 'extra-3-exo-mlx-none') or (sys_platform != 'darwin' and extra == 'extra-3-exo-mlx-cuda12' and extra == 'extra-3-exo-mlx-cuda13') or (sys_platform != 'darwin' and extra == 'extra-3-exo-mlx-cuda12' and extra == 'extra-3-exo-mlx-none') or (sys_platform != 'darwin' and extra == 'extra-3-exo-mlx-cuda13' and extra == 'extra-3-exo-mlx-none')" },
+    { name = "exo-tbccl", version = "0.3.0", source = { url = "https://github.com/tensorsofthewall/exo-tbccl/releases/download/v0.3.0/exo_tbccl-0.3.0-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl" }, marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine != 'x86_64' and extra == 'extra-3-exo-mlx-cpu' and extra == 'extra-3-exo-mlx-cuda12') or (platform_machine != 'x86_64' and extra == 'extra-3-exo-mlx-cpu' and extra == 'extra-3-exo-mlx-cuda13') or (platform_machine != 'x86_64' and extra == 'extra-3-exo-mlx-cpu' and extra == 'extra-3-exo-mlx-none') or (platform_machine != 'x86_64' and extra == 'extra-3-exo-mlx-cuda12' and extra == 'extra-3-exo-mlx-cuda13') or (platform_machine != 'x86_64' and extra == 'extra-3-exo-mlx-cuda12' and extra == 'extra-3-exo-mlx-none') or (platform_machine != 'x86_64' and extra == 'extra-3-exo-mlx-cuda13' and extra == 'extra-3-exo-mlx-none') or (sys_platform != 'linux' and extra == 'extra-3-exo-mlx-cpu' and extra == 'extra-3-exo-mlx-cuda12') or (sys_platform != 'linux' and extra == 'extra-3-exo-mlx-cpu' and extra == 'extra-3-exo-mlx-cuda13') or (sys_platform != 'linux' and extra == 'extra-3-exo-mlx-cpu' and extra == 'extra-3-exo-mlx-none') or (sys_platform != 'linux' and extra == 'extra-3-exo-mlx-cuda12' and extra == 'extra-3-exo-mlx-cuda13') or (sys_platform != 'linux' and extra == 'extra-3-exo-mlx-cuda12' and extra == 'extra-3-exo-mlx-none') or (sys_platform != 'linux' and extra == 'extra-3-exo-mlx-cuda13' and extra == 'extra-3-exo-mlx-none')" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -524,6 +528,8 @@ requires-dist = [
     { name = "exo", extras = ["mlx"], marker = "extra == 'mlx-cuda12'" },
     { name = "exo", extras = ["mlx"], marker = "extra == 'mlx-cuda13'" },
     { name = "exo-rs", editable = "rust/exo_rs" },
+    { name = "exo-tbccl", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'tbccl'", url = "https://github.com/tensorsofthewall/exo-tbccl/releases/download/v0.3.0/exo_tbccl-0.3.0-cp313-cp313-macosx_14_0_arm64.whl" },
+    { name = "exo-tbccl", marker = "platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'tbccl'", url = "https://github.com/tensorsofthewall/exo-tbccl/releases/download/v0.3.0/exo_tbccl-0.3.0-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl" },
     { name = "fastapi", specifier = ">=0.116.1" },
     { name = "filelock", specifier = ">=3.18.0" },
     { name = "httpx", specifier = ">=0.28.1" },
@@ -573,7 +579,7 @@ requires-dist = [
     { name = "types-aiofiles", specifier = ">=24.1.0.20250708" },
     { name = "zstandard", specifier = ">=0.23.0" },
 ]
-provides-extras = ["build", "mlx-none", "mlx", "mlx-cpu", "mlx-cuda12", "mlx-cuda13"]
+provides-extras = ["build", "mlx-none", "mlx", "mlx-cpu", "mlx-cuda12", "mlx-cuda13", "tbccl"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -640,6 +646,28 @@ dev = [
     { name = "exo-rs", editable = "rust/exo_rs" },
     { name = "pytest", specifier = ">=8.4.0" },
     { name = "pytest-asyncio", specifier = ">=1.0.0" },
+]
+
+[[package]]
+name = "exo-tbccl"
+version = "0.3.0"
+source = { url = "https://github.com/tensorsofthewall/exo-tbccl/releases/download/v0.3.0/exo_tbccl-0.3.0-cp313-cp313-macosx_14_0_arm64.whl" }
+resolution-markers = [
+    "sys_platform == 'darwin'",
+]
+wheels = [
+    { url = "https://github.com/tensorsofthewall/exo-tbccl/releases/download/v0.3.0/exo_tbccl-0.3.0-cp313-cp313-macosx_14_0_arm64.whl", hash = "sha256:9b4351f612386f4f5f867a98dfaaab1538fc0bfa07b35867963358cb70aed35a" },
+]
+
+[[package]]
+name = "exo-tbccl"
+version = "0.3.0"
+source = { url = "https://github.com/tensorsofthewall/exo-tbccl/releases/download/v0.3.0/exo_tbccl-0.3.0-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl" }
+resolution-markers = [
+    "platform_machine != 'aarch64' and sys_platform == 'linux'",
+]
+wheels = [
+    { url = "https://github.com/tensorsofthewall/exo-tbccl/releases/download/v0.3.0/exo_tbccl-0.3.0-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:6d4a039bc913c255620c38ca07d50648b8d85785af34c2a0592e0c7751b7f227" },
 ]
 
 [[package]]
