@@ -1,7 +1,7 @@
 # MlxTbccl: pipeline parallelism over TBCCL (optional, experimental)
 
 `MlxTbccl` is an optional instance type that moves pipeline-stage activations with
-[TBCCL](a separate, optional project) through the separate `exo-tbccl` package instead of `mx.distributed`. It lets a Mac (Metal) and a Linux machine
+[TBCCL](https://github.com/tensorsofthewall/tbccl) through the separate `exo-tbccl` package instead of `mx.distributed`. It lets a Mac (Metal) and a Linux machine
 (CUDA) run one pipeline over a Thunderbolt or Ethernet link. exo still owns discovery, placement and shard assignment; TBCCL only moves bytes.
 
 ## Selecting it

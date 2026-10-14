@@ -1,3 +1,5 @@
+> **TBCCL fork.** This is a maintained fork of exo that carries the [exo-tbccl](https://github.com/tensorsofthewall/exo-tbccl) integration. Install the immutable tag `tbccl-integration-v1`, not `main`; see [TBCCL-FORK.md](TBCCL-FORK.md).
+
 <div align="center">
 
 <picture>
