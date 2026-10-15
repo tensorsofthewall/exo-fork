@@ -150,10 +150,9 @@ def check(report):
             "exo's Rust bindings are built by `uv sync`; install via https://rustup.rs/",
         )
     if platform.system() == "Darwin":
-        if run(["xcode-select", "-p"]) and run(["xcode-select", "-p"]).returncode == 0:
-            report.ok(
-                "Xcode command line tools", first_line(run(["xcode-select", "-p"]))
-            )
+        xcode = run(["xcode-select", "-p"])
+        if xcode is not None and xcode.returncode == 0:
+            report.ok("Xcode command line tools", first_line(xcode))
         else:
             report.need(
                 "Xcode command line tools",
