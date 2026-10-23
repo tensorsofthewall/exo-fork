@@ -192,7 +192,7 @@ root = "tools/src"
 
 # supported platforms for this project
 [tool.uv]
-required-version = ">=0.8.6"
+required-version = ">=0.13.4"
 prerelease = "allow"
 environments = ["sys_platform == 'darwin'", "sys_platform == 'linux'"]
 override-dependencies = ["opencv-python; python_version < '0'"]
