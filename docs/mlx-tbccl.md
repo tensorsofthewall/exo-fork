@@ -18,12 +18,12 @@ thunderbolt interface is preferred, as for the ring backend).
 
 - The `exo-tbccl` package in exo's environment (`exo_tbccl.is_available()`); its wheel already contains TBCCL (C ABI 1, wire protocol 4), so nothing else is installed. See [TBCCL-FORK.md](../TBCCL-FORK.md). exo runs normally
   without it and `MlxTbccl` placement then fails with a message saying what is missing. The package is published as GitHub release wheels (not on PyPI) and is
-  not a mandatory exo dependency; `tbccl-integration-v2` offers it as the optional `tbccl` extra (`uv sync --locked --extra mlx-cuda13 --extra tbccl`, or `--extra mlx --extra tbccl` on macOS; Linux x86-64 and macOS arm64 only).
+  not a mandatory exo dependency; `tbccl-integration-v2` and `tbccl-integration-v3` offer it as the optional `tbccl` extra (`uv sync --locked --extra mlx-cuda13 --extra tbccl`, or `--extra mlx --extra tbccl` on macOS; Linux x86-64 and macOS arm64 only).
 - Backends: MlxMetal, MlxCuda, MlxCpu (a Mac and a Linux/CUDA node can be mixed).
 
 ## Upstream base
 
-The integration is maintained as a short series of commits over upstream exo (`75d8ad2b`, 2026-10-12, for `tbccl-integration-v1`; `bc412e22`, 2026-10-13, for `tbccl-integration-v2`, which also adds the optional `tbccl` extra): the `PipelineComm` seam, the `MlxTbccl` instance type and its placement rules, the generic runner byte exchange, `TbcclPipelineComm`, and the synthetic pipeline driver. Without the optional package exo behaves as upstream.
+The integration is maintained as a short series of commits over upstream exo (`75d8ad2b`, 2026-10-12, for `tbccl-integration-v1`; `bc412e22`, 2026-10-13, for `tbccl-integration-v2`, which also adds the optional `tbccl` extra; `tbccl-integration-v3` has the same integration code and updated trust-store dependencies): the `PipelineComm` seam, the `MlxTbccl` instance type and its placement rules, the generic runner byte exchange, `TbcclPipelineComm`, and the synthetic pipeline driver. Without the optional package exo behaves as upstream.
 
 ## Limitations
 
