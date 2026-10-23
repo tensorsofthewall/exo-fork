@@ -39,7 +39,10 @@ jobs:
         with:
           python-version: "3.13"
       - name: Install uv
-        run: python -m pip install "uv==0.9.18"
+        run: |
+          # pip 26.2.2 from its hash-pinned wheel first (the pip of the hosted Python trusts the revoked emSign root), then a specific uv
+          python -m pip install "pip @ https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl#sha256=fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70"
+          python -m pip install "uv==0.13.5"
       - name: Locked sync with the tbccl extra
         run: uv sync --no-dev --locked --extra tbccl
       - name: Doctor report, adapter and runtime

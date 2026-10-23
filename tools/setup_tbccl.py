@@ -7,7 +7,7 @@
     setup_tbccl.py doctor    read-only, inside the installed environment: exo and adapter versions, the TBCCL runtime, device backend, model directories, namespace and ports
 
 It never clones another revision, never replaces this checkout, never installs system packages (no Node, Rust or Xcode), never touches network interfaces or
-firewalls, and `check` and `doctor` change nothing. The supported configuration is the immutable tag `tbccl-integration-v2` with the optional `tbccl` extra.
+firewalls, and `check` and `doctor` change nothing. The supported configuration is the immutable tag `tbccl-integration-v3` with the optional `tbccl` extra.
 """
 
 import argparse
@@ -21,7 +21,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 TAG_PREFIX = "tbccl-integration-v"
-SUPPORTED_TAG = "tbccl-integration-v2"
+SUPPORTED_TAG = "tbccl-integration-v3"
 PORTS = (
     ("UDP", 52413, "discovery"),
     ("TCP", 52414, "cluster transport"),
@@ -190,7 +190,7 @@ def check(report):
     elif tag.startswith(TAG_PREFIX):
         report.info(
             "revision",
-            f"{tag} ({commit[:12]}); the current supported tag is {SUPPORTED_TAG}. v1 has no `tbccl` extra: use its manual-wheel instructions",
+            f"{tag} ({commit[:12]}); the current supported tag is {SUPPORTED_TAG}. v2 locks an older certifi (see TBCCL-FORK.md, Security) and v1 has no `tbccl` extra: use its manual-wheel instructions",
         )
     else:
         report.info(

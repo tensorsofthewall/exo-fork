@@ -1,4 +1,4 @@
-> **TBCCL fork.** This is a maintained fork of exo that carries the [exo-tbccl](https://github.com/tensorsofthewall/exo-tbccl) integration. Install the immutable tag `tbccl-integration-v2`, not `main`; see [TBCCL-FORK.md](TBCCL-FORK.md).
+> **TBCCL fork.** This is a maintained fork of exo that carries the [exo-tbccl](https://github.com/tensorsofthewall/exo-tbccl) integration. Install the immutable tag `tbccl-integration-v3`, not `main`; see [TBCCL-FORK.md](TBCCL-FORK.md).
 
 <div align="center">
 
@@ -25,17 +25,17 @@ exo connects all your devices into an AI cluster. Not only does exo enable runni
 
 This repository is a maintained fork of upstream [exo](https://github.com/exo-explore/exo). The fork is required only to run exo pipelines over [TBCCL](https://github.com/tensorsofthewall/tbccl) (the `MlxTbccl` instance type, for example a Mac with Metal and a Linux host with CUDA in one pipeline); it adds the `PipelineComm` seam and a runner byte exchange that upstream exo does not have. For everything else use [upstream exo](https://github.com/exo-explore/exo); the upstream installation instructions below still apply to this repository when you do not need TBCCL.
 
-**Supported integration: the immutable tag `tbccl-integration-v2`** (commit `d1497b28b89618172d273e70e9ac7992811635f5`, upstream exo `bc412e22` plus the integration), qualified with [exo-tbccl](https://github.com/tensorsofthewall/exo-tbccl) 0.3.0. Never install `main` for TBCCL use. Installing is exo's normal from-source flow on the tag, with the adapter as the optional `tbccl` extra (Python 3.13; prerequisites as in [Run from Source](#run-from-source-macos)). The tag's own README predates this method; use these commands:
+**Supported integration: the immutable tag `tbccl-integration-v3`** (upstream exo `bc412e22` plus the integration, the same integration code as `tbccl-integration-v2` with updated trust-store dependencies; its commit is recorded in the [exo-tbccl manifest](https://github.com/tensorsofthewall/exo-tbccl/blob/main/compatibility.json)), qualified with [exo-tbccl](https://github.com/tensorsofthewall/exo-tbccl) 0.3.0 and later. Never install `main` for TBCCL use. Installing is exo's normal from-source flow on the tag, with the adapter as the optional `tbccl` extra (Python 3.13, uv 0.13.4 or later; prerequisites as in [Run from Source](#run-from-source-macos)). Use these commands:
 
 ```bash
-git clone --depth 1 --branch tbccl-integration-v2 https://github.com/tensorsofthewall/exo-fork.git
+git clone --depth 1 --branch tbccl-integration-v3 https://github.com/tensorsofthewall/exo-fork.git
 cd exo-fork && (cd dashboard && npm install && npm run build)
 uv sync --no-dev --locked --extra mlx-cuda13 --extra tbccl     # Linux x86-64, CUDA 13
 uv sync --no-dev --locked --extra mlx --extra tbccl            # macOS arm64, Metal
 uv run --no-sync python -c "import exo_tbccl; print(exo_tbccl.is_available())"    # (True, '')
 ```
 
-The extra installs the exo-tbccl 0.3.0 wheel, which contains the TBCCL runtime (no separate libtbccl); it exists for Linux x86-64 and macOS arm64 and installs nothing elsewhere. exo-tbccl stays optional: exo works without it. The earlier `tbccl-integration-v1` remains available with its manual-wheel instructions in [TBCCL-FORK.md](TBCCL-FORK.md#legacy-tbccl-integration-v1-and-a-manual-wheel). Details, verification and troubleshooting: [TBCCL-FORK.md](TBCCL-FORK.md).
+The extra installs the exo-tbccl 0.3.0 wheel, which contains the TBCCL runtime (no separate libtbccl); it exists for Linux x86-64 and macOS arm64 and installs nothing elsewhere. exo-tbccl stays optional: exo works without it. The earlier `tbccl-integration-v2` (certifi 2026.1.4 in its lock; see the [security note](TBCCL-FORK.md#security-emudhra-ca-removal-october-2026)) and `tbccl-integration-v1` remain available with its manual-wheel instructions in [TBCCL-FORK.md](TBCCL-FORK.md#legacy-tbccl-integration-v1-and-a-manual-wheel). Details, verification and troubleshooting: [TBCCL-FORK.md](TBCCL-FORK.md).
 
 ## Features
 
