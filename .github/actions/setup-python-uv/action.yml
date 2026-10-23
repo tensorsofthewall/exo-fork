@@ -8,6 +8,9 @@ runs:
     - name: Install uv
       uses: astral-sh/setup-uv@v6
       with:
+        # A specific uv, not the newest: 0.13.4 is the first release without the revoked emSign root; 0.13.5 also blocks the compromised intermediates and
+        # installs managed CPython builds that carry pip 26.2.2.
+        version: "0.13.5"
         enable-cache: true
         cache-dependency-glob: uv.lock
 
